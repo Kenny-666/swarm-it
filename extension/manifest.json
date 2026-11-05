@@ -1,12 +1,12 @@
 {
   "manifest_version": 3,
-  "name": "Draftline – Blueprint Page Builder",
-  "short_name": "Draftline",
+  "name": "Swarmline – Blueprint Page Builder",
+  "short_name": "Swarmline",
   "version": "1.0.0",
-  "description": "Watch any web page draw itself as a blueprint: outlined, measured and revealed, then live again.",
+  "description": "A swarm of glowing pen-nibs draws any web page as a blueprint: outlined, measured and revealed, then live again.",
   "minimum_chrome_version": "104",
   "action": {
-    "default_title": "Draftline (Alt+Shift+D)",
+    "default_title": "Swarmline (Alt+Shift+L)",
     "default_icon": {
       "16": "icons/icon16.png",
       "32": "icons/icon32.png",
@@ -24,7 +24,7 @@
   "permissions": ["activeTab", "scripting"],
   "commands": {
     "_execute_action": {
-      "suggested_key": { "default": "Alt+Shift+D", "mac": "Alt+Shift+D" },
+      "suggested_key": { "default": "Alt+Shift+L", "mac": "Alt+Shift+L" },
       "description": "Draw this page as a blueprint"
     }
   }

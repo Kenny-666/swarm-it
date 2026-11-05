@@ -1,4 +1,4 @@
-// Builds the Chrome Web Store upload: dist/draftline-<version>.zip
+// Builds the Chrome Web Store upload: dist/swarmline-<version>.zip
 // (manifest.json at the zip root; only the files the extension ships).
 // Uses Node built-ins only.
 
@@ -10,7 +10,7 @@ import { fileURLToPath } from "node:url";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const src = path.join(root, "extension");
 const manifest = JSON.parse(fs.readFileSync(path.join(src, "manifest.json"), "utf8"));
-const files = ["manifest.json", "background.js", "draftline.js", ...["16", "32", "48", "128"].map((n) => `icons/icon${n}.png`)];
+const files = ["manifest.json", "background.js", "swarmline.js", ...["16", "32", "48", "128"].map((n) => `icons/icon${n}.png`)];
 for (const f of files) if (!fs.existsSync(path.join(src, f))) throw new Error(`missing ${f} (run npm run assets for icons)`);
 
 const CRC = new Uint32Array(256).map((_, n) => {
@@ -71,7 +71,7 @@ end.writeUInt32LE(cd.length, 12);
 end.writeUInt32LE(offset, 16);
 
 fs.mkdirSync(path.join(root, "dist"), { recursive: true });
-const out = path.join(root, "dist", `draftline-${manifest.version}.zip`);
+const out = path.join(root, "dist", `swarmline-${manifest.version}.zip`);
 fs.writeFileSync(out, Buffer.concat([...local, cd, end]));
 console.log(`Built ${path.relative(root, out)} (${(fs.statSync(out).size / 1024).toFixed(1)} KB)`);
 for (const f of files) console.log("  " + f);

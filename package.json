@@ -1,11 +1,11 @@
 {
-  "name": "draftline",
+  "name": "swarmline",
   "version": "1.0.0",
   "private": true,
   "description": "Chrome extension: watch any web page draw itself as a blueprint.",
   "type": "module",
   "scripts": {
-    "check": "node --check extension/draftline.js && node --check extension/background.js",
+    "check": "node --check extension/swarmline.js && node --check extension/background.js",
     "lint": "eslint extension tests scripts",
     "test": "node tests/smoke.mjs demo/index.html",
     "test:site": "node tests/smoke.mjs https://cenovabuild.com/",

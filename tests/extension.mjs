@@ -18,7 +18,7 @@ const url = /^https?:/.test(arg) ? arg : pathToFileURL(path.resolve(root, arg)).
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const chromePath = process.env.CHROME_PATH || "C:/Program Files/Google/Chrome/Application/chrome.exe";
 
-const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "draftline-ext-"));
+const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "swarmline-ext-"));
 fs.cpSync(path.join(root, "extension"), tmp, { recursive: true });
 const mf = JSON.parse(fs.readFileSync(path.join(tmp, "manifest.json"), "utf8"));
 mf.host_permissions = ["<all_urls>"];
@@ -52,17 +52,17 @@ try {
       await draft(tab); // eslint-disable-line no-undef
       return chrome.action.getBadgeText({ tabId: tab.id });
     }, page.url());
-  const sheet = () => page.evaluate(() => !!document.querySelector("draftline-sheet"));
+  const sheet = () => page.evaluate(() => !!document.querySelector("swarmline-sheet"));
 
   const badge = await click();
   await sleep(400);
   check("toolbar click draws the page", (await sheet()) && badge === "", { badge });
-  check("overlay is closed to page scripts", await page.evaluate(() => document.querySelector("draftline-sheet").shadowRoot === null));
+  check("overlay is closed to page scripts", await page.evaluate(() => document.querySelector("swarmline-sheet").shadowRoot === null));
   await sleep(2500);
   await page.keyboard.press("f");
   await sleep(1600);
   check("F lifts the blueprint and leaves the page usable", await page.evaluate(() => {
-    const h = document.querySelector("draftline-sheet");
+    const h = document.querySelector("swarmline-sheet");
     return !!h && document.elementFromPoint(640, 300) !== h;
   }));
   await page.keyboard.press("Escape");

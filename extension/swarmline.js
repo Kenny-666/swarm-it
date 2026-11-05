@@ -1,5 +1,5 @@
 /*
- * Draftline: watch any web page draw itself as a blueprint.
+ * Swarmline: watch any web page draw itself as a blueprint.
  *
  * A blueprint sheet is laid over the live page. A swarm of glowing pen-nibs
  * flies from element to element, tracing outlines and writing text lines in
@@ -13,7 +13,7 @@
 (() => {
   "use strict";
 
-  const KEY = "__draftline";
+  const KEY = "__swarmline";
   if (window[KEY]) {
     window[KEY].toggle();
     return;
@@ -40,7 +40,7 @@
 
   const SKIP = new Set([
     "script", "style", "noscript", "template", "head", "meta", "link", "title", "base", "br", "wbr",
-    "option", "optgroup", "datalist", "source", "track", "param", "area", "map", "draftline-sheet",
+    "option", "optgroup", "datalist", "source", "track", "param", "area", "map", "swarmline-sheet",
   ]);
   const MEDIA = new Set(["img", "svg", "video", "canvas", "picture", "iframe", "embed", "object"]);
   const CONTROL = new Set(["input", "textarea", "select"]);
@@ -405,22 +405,22 @@ canvas.off{pointer-events:none;display:none}
     }
 
     mount() {
-      for (const old of document.querySelectorAll("draftline-sheet")) old.remove();
-      const host = document.createElement("draftline-sheet");
+      for (const old of document.querySelectorAll("swarmline-sheet")) old.remove();
+      const host = document.createElement("swarmline-sheet");
       host.style.cssText = "all:initial !important;position:fixed !important;inset:0 !important;z-index:2147483647 !important;display:block !important;pointer-events:none !important;contain:strict !important;";
       // closed: page scripts can't reach into the overlay
       const root = host.attachShadow({ mode: "closed" });
       root.innerHTML = `<style>${STYLE}</style>
 <canvas aria-hidden="true"></canvas>
-<div class="block" aria-hidden="true"><b>DRAFTLINE</b><div class="host"></div><div class="row"><span>Sheet</span><span class="sheetn">01 / 01</span></div><div class="row"><span>Size</span><span class="size"></span></div></div>
-<div class="hud" role="toolbar" aria-label="Draftline">
+<div class="block" aria-hidden="true"><b>SWARMLINE</b><div class="host"></div><div class="row"><span>Sheet</span><span class="sheetn">01 / 01</span></div><div class="row"><span>Size</span><span class="size"></span></div></div>
+<div class="hud" role="toolbar" aria-label="Swarmline">
   <svg class="ring" viewBox="0 0 30 30" aria-hidden="true"><circle class="bg" cx="15" cy="15" r="12"/><circle class="fg" cx="15" cy="15" r="12" transform="rotate(-90 15 15)" stroke-dasharray="75.4" stroke-dashoffset="75.4"/></svg>
   <div class="meta" aria-live="polite"><span class="t">Preparing the sheet…</span><span class="s">&nbsp;</span></div>
   <button data-a="tour" aria-pressed="false" title="Glide through the page sheet by sheet (T)">Auto-tour</button>
   <button data-a="speed" title="Drafting speed" aria-label="Drafting speed 1×">1×</button>
   <button data-a="finish" title="Lift the blueprint now (F)">Finish</button>
   <button data-a="replay" class="pri" hidden title="Draw the page again">Replay</button>
-  <button data-a="close" class="x" title="Exit (Esc)" aria-label="Exit Draftline">✕</button>
+  <button data-a="close" class="x" title="Exit (Esc)" aria-label="Exit Swarmline">✕</button>
 </div>`;
       document.documentElement.appendChild(host);
       this.host = host;
@@ -625,7 +625,7 @@ canvas.off{pointer-events:none;display:none}
           this.updateHud();
         }
       } catch (err) {
-        console.error("[draftline]", err);
+        console.error("[swarmline]", err);
       }
       if (!this.dead) this.raf = requestAnimationFrame((t) => this.frame(t));
     }
@@ -1498,7 +1498,7 @@ canvas.off{pointer-events:none;display:none}
     try {
       app = new App();
     } catch (err) {
-      console.error("[draftline]", err);
+      console.error("[swarmline]", err);
       app = null;
     }
   }

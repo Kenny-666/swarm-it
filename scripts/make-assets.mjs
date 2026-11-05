@@ -1,7 +1,7 @@
 // Builds every image the extension and its Chrome Web Store listing need:
 //   extension/icons/icon{16,32,48,128}.png   toolbar + extension icons
 //   store/store-icon-128.png                  store icon (96px artwork, 16px clear margin)
-//   store/screenshot-{1,2,3}.png             1280×800, Draftline drawing the demo page
+//   store/screenshot-{1,2,3}.png             1280×800, Swarmline drawing the demo page
 //   store/promo-440x280.png                   small promo tile
 //   store/marquee-1400x560.png                marquee promo tile
 // Run: npm run assets   (needs Chrome; set CHROME_PATH if it isn't in a standard place)
@@ -56,7 +56,7 @@ try {
   fs.writeFileSync(path.join(root, "store", "icon.svg"), iconSVG(128));
   console.log("icons done");
 
-  // ---- screenshots: Draftline drawing the (fictional) demo page
+  // ---- screenshots: Swarmline drawing the (fictional) demo page
   const W = 1280;
   const H = 800;
   await page.setViewport({ width: W, height: H, deviceScaleFactor: 1 });
@@ -66,14 +66,14 @@ try {
     await page.goto(demo, { waitUntil: "load" });
     await page.evaluate((y) => window.scrollTo(0, y), scrollY);
     await sleep(600);
-    await page.addScriptTag({ path: path.join(root, "extension", "draftline.js") });
+    await page.addScriptTag({ path: path.join(root, "extension", "swarmline.js") });
     for (const [ms, file] of waits) {
       await sleep(ms);
       const p = path.join(root, "store", file);
       await page.screenshot({ path: p });
       shots.push(p);
     }
-    await page.evaluate(() => window.__draftline && window.__draftline.stop());
+    await page.evaluate(() => window.__swarmline && window.__swarmline.stop());
     await sleep(500);
   };
   await run(0, [[1900, "screenshot-1.png"]]);
@@ -98,8 +98,8 @@ try {
     .dim{position:absolute;right:${big ? 60 : 20}px;bottom:${big ? 40 : 18}px;font:600 ${big ? 13 : 9}px ui-monospace,Menlo,monospace;color:#FFC46B}
   </style></head><body><div class="grid"></div>
     <img class="shot" src="${b64(shots[0])}">
-    <div class="copy"><div class="brand"><img src="${icon}">Draftline</div>
-      <p>Watch any web page draw itself as a blueprint.</p>
+    <div class="copy"><div class="brand"><img src="${icon}">Swarmline</div>
+      <p>A swarm draws any web page as a blueprint.</p>
       <div class="k">Outline · Measure · Reveal</div></div>
   </body></html>`;
   for (const [w, h, big, file] of [[440, 280, false, "promo-440x280.png"], [1400, 560, true, "marquee-1400x560.png"]]) {

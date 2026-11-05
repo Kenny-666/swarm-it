@@ -1,10 +1,10 @@
-// Smoke test: run Draftline on a page in Chrome with Auto-tour on, record how it moves,
+// Smoke test: run Swarmline on a page in Chrome with Auto-tour on, record how it moves,
 // take screenshots along the way, and check it lifts away to leave the live page.
 //
 //   node tests/smoke.mjs demo/index.html
 //   node tests/smoke.mjs https://example.com/
 //
-// draftline.js is injected straight into the page (branded Chrome won't load unpacked
+// swarmline.js is injected straight into the page (branded Chrome won't load unpacked
 // extensions from the command line); tests/extension.mjs covers the real extension.
 // Output: tests/out/<page>/ (frames + report.json).
 
@@ -43,7 +43,7 @@ let failed;
 try {
   const page = await browser.newPage();
   page.on("pageerror", (e) => report.errors.push("page: " + e.message));
-  page.on("console", (m) => /draftline/i.test(m.text()) && m.type() === "error" && report.errors.push(m.text()));
+  page.on("console", (m) => /swarmline/i.test(m.text()) && m.type() === "error" && report.errors.push(m.text()));
   let lastNav = Date.now();
   page.on("framenavigated", (f) => f === page.mainFrame() && (lastNav = Date.now()));
   await page.goto(url, { waitUntil: "networkidle2", timeout: 90000 });
@@ -52,10 +52,10 @@ try {
   await sleep(1500);
   await page.screenshot({ path: path.join(out, "00-live.png") });
 
-  await page.addScriptTag({ path: path.join(root, "extension", "draftline.js") });
-  await page.waitForFunction(() => window.__draftline && window.__draftline.app, { timeout: 10000 });
+  await page.addScriptTag({ path: path.join(root, "extension", "swarmline.js") });
+  await page.waitForFunction(() => window.__swarmline && window.__swarmline.app, { timeout: 10000 });
   await page.evaluate((speed) => {
-    const a = window.__draftline.app;
+    const a = window.__swarmline.app;
     a.speed = speed;
     a.setTour(true);
   }, SPEED);
@@ -69,7 +69,7 @@ try {
   const marks = [];
   for (;;) {
     const s = await page.evaluate(() => {
-      const a = window.__draftline.app;
+      const a = window.__swarmline.app;
       if (!a) return null;
       return { top: Math.round(a.env.top), units: a.units.length, done: a.done, active: a.active.length, jump: !!a.jump, sweep: !!a.sweep, outro: !!a.outro, off: !!(a.outro && a.outro.off) };
     });
@@ -115,7 +115,7 @@ try {
     fpsWhileDrafting: fpsDuring,
     fpsAfter: fps[0],
     overlayGone: await page.evaluate(() => {
-      const h = document.querySelector("draftline-sheet");
+      const h = document.querySelector("swarmline-sheet");
       return !h || getComputedStyle(h).pointerEvents === "none";
     }),
   };
