@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fernbrook Studio · Draftline demo page</title>
+<!-- A self-contained page for testing Draftline and for store screenshots.
+     Fernbrook Studio is fictional. No external requests. -->
+<style>
+  :root { --ink:#14161c; --muted:#5d6472; --line:#e7e9ee; --accent:#ff6a3d; --accent2:#3d7bff; --bg:#f6f5f2; }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: auto; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.6 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  a { color: inherit; text-decoration: none; }
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 0 32px; }
+  header { position: sticky; top: 0; z-index: 10; background: rgba(246,245,242,.86); backdrop-filter: blur(10px); border-bottom: 1px solid var(--line); }
+  header .wrap { display: flex; align-items: center; gap: 28px; height: 68px; }
+  .logo { display: flex; align-items: center; gap: 10px; font-weight: 800; letter-spacing: -.02em; font-size: 19px; }
+  .logo i { width: 26px; height: 26px; border-radius: 8px; background: conic-gradient(from 210deg, var(--accent), #ffb347, var(--accent2), var(--accent)); display: block; }
+  nav { display: flex; gap: 22px; color: var(--muted); font-size: 15px; }
+  .cta { margin-left: auto; display: inline-flex; align-items: center; gap: 8px; padding: 10px 18px; border-radius: 999px; background: var(--ink); color: #fff; font-weight: 600; font-size: 14px; }
+  .hero { padding: 86px 0 70px; display: grid; grid-template-columns: 1.1fr .9fr; gap: 56px; align-items: center; }
+  .eyebrow { display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px; border-radius: 999px; background: #fff; border: 1px solid var(--line); font-size: 13px; color: var(--muted); }
+  .eyebrow b { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); animation: pulse 1.8s ease-in-out infinite; }
+  @keyframes pulse { 50% { transform: scale(1.6); opacity: .5; } }
+  h1 { font-size: 64px; line-height: 1.02; letter-spacing: -.04em; margin: 22px 0 20px; }
+  h1 em { font-style: normal; background: linear-gradient(90deg, var(--accent), var(--accent2)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .lede { font-size: 19px; color: var(--muted); max-width: 520px; margin: 0 0 30px; }
+  .btns { display: flex; gap: 12px; }
+  .btn { padding: 14px 22px; border-radius: 12px; font-weight: 600; }
+  .btn.pri { background: var(--accent); color: #fff; box-shadow: 0 10px 24px rgba(255,106,61,.28); }
+  .btn.sec { background: #fff; border: 1px solid var(--line); }
+  .art { position: relative; height: 460px; border-radius: 28px; overflow: hidden; background: #1b1f2a; box-shadow: 0 30px 60px rgba(20,22,28,.18); }
+  .art canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .art .chip { position: absolute; left: 22px; bottom: 22px; padding: 12px 16px; border-radius: 14px; background: rgba(255,255,255,.92); font-size: 14px; display: flex; gap: 12px; align-items: center; box-shadow: 0 10px 30px rgba(0,0,0,.2); }
+  .art .chip strong { font-size: 22px; }
+  .logos { border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); background: #fff; overflow: hidden; }
+  .track { display: flex; gap: 64px; padding: 26px 0; width: max-content; animation: slide 26s linear infinite; color: #9aa0ab; font-weight: 700; font-size: 20px; letter-spacing: .02em; }
+  @keyframes slide { to { transform: translateX(-50%); } }
+  section { padding: 90px 0; }
+  .kicker { color: var(--accent); font-weight: 700; font-size: 13px; letter-spacing: .14em; text-transform: uppercase; }
+  h2 { font-size: 42px; letter-spacing: -.03em; line-height: 1.1; margin: 12px 0 40px; max-width: 640px; }
+  .grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 22px; }
+  .card { background: #fff; border: 1px solid var(--line); border-radius: 20px; padding: 28px; }
+  .card .ic { width: 46px; height: 46px; border-radius: 12px; display: grid; place-items: center; background: #fff1ec; margin-bottom: 18px; }
+  .card h3 { margin: 0 0 8px; font-size: 20px; }
+  .card p { margin: 0; color: var(--muted); font-size: 15px; }
+  .stats { background: var(--ink); color: #fff; border-radius: 28px; padding: 56px; display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; }
+  .stats div b { display: block; font-size: 46px; letter-spacing: -.03em; }
+  .stats div span { color: #a5acba; font-size: 14px; }
+  .work { display: grid; grid-template-columns: 1.3fr 1fr; gap: 22px; }
+  .shot { border-radius: 22px; overflow: hidden; background: #fff; border: 1px solid var(--line); }
+  .shot svg { display: block; width: 100%; height: auto; }
+  .shot .cap { padding: 18px 22px; display: flex; justify-content: space-between; }
+  .shot .cap span { color: var(--muted); }
+  .quote { display: grid; grid-template-columns: 96px 1fr; gap: 28px; align-items: center; background: #fff; border: 1px solid var(--line); border-radius: 24px; padding: 40px; }
+  .quote img { width: 96px; height: 96px; border-radius: 50%; }
+  .quote p { font-size: 24px; line-height: 1.45; margin: 0 0 12px; letter-spacing: -.01em; }
+  .quote small { color: var(--muted); }
+  .plans { display: grid; grid-template-columns: repeat(3, 1fr); gap: 22px; }
+  .plan { background: #fff; border: 1px solid var(--line); border-radius: 22px; padding: 32px; }
+  .plan.hot { background: linear-gradient(160deg, #1d2333, #11141c); color: #fff; border: 0; transform: translateY(-10px); box-shadow: 0 24px 50px rgba(20,22,28,.25); }
+  .plan .price { font-size: 44px; font-weight: 800; letter-spacing: -.03em; margin: 12px 0; }
+  .plan ul { padding: 0; margin: 20px 0 26px; list-style: none; }
+  .plan li { padding: 7px 0; border-top: 1px solid rgba(127,127,127,.18); font-size: 15px; }
+  .plan .btn { display: block; text-align: center; }
+  .plan.hot .btn { background: var(--accent); color: #fff; }
+  .plan:not(.hot) .btn { background: var(--bg); }
+  footer { background: #101219; color: #a5acba; padding: 60px 0 40px; margin-top: 40px; }
+  footer .wrap { display: grid; grid-template-columns: 2fr 1fr 1fr 1fr; gap: 28px; }
+  footer h4 { color: #fff; margin: 0 0 12px; font-size: 14px; }
+  footer p, footer a { display: block; font-size: 14px; margin: 0 0 8px; }
+  .fine { text-align: center; font-size: 12px; color: #6b7280; margin-top: 40px; }
+</style>
+</head>
+<body>
+<header>
+  <div class="wrap">
+    <a class="logo" href="#"><i></i>Fernbrook</a>
+    <nav><a href="#">Work</a><a href="#">Services</a><a href="#">Studio</a><a href="#">Journal</a></nav>
+    <a class="cta" href="#">Start a project →</a>
+  </div>
+</header>
+
+<main class="wrap">
+  <div class="hero">
+    <div>
+      <span class="eyebrow"><b></b> Now booking spring projects</span>
+      <h1>Websites that feel <em>built by hand.</em></h1>
+      <p class="lede">Fernbrook is a small design and engineering studio. We plan, design and ship fast, careful websites for teams who care about the details.</p>
+      <div class="btns"><a class="btn pri" href="#">See our work</a><a class="btn sec" href="#">How we work</a></div>
+    </div>
+    <div class="art">
+      <canvas id="waves" width="900" height="920"></canvas>
+      <div class="chip"><strong>98</strong> Lighthouse score, on average</div>
+    </div>
+  </div>
+</main>
+
+<div class="logos"><div class="track">
+  <span>LUMENFOLD</span><span>Orbiqo</span><span>MERIDANE</span><span>Quillbrook</span><span>HALVARA</span><span>tesselate</span><span>BRIGHTVANE</span><span>Kestrelwood</span>
+  <span>LUMENFOLD</span><span>Orbiqo</span><span>MERIDANE</span><span>Quillbrook</span><span>HALVARA</span><span>tesselate</span><span>BRIGHTVANE</span><span>Kestrelwood</span>
+</div></div>
+
+<section><div class="wrap">
+  <div class="kicker">What we do</div>
+  <h2>Everything a launch needs, from first sketch to final pixel.</h2>
+  <div class="grid3">
+    <div class="card"><div class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#ff6a3d" stroke-width="2" stroke-linecap="round"><path d="M3 21h18M5 21V8l7-5 7 5v13M9 21v-6h6v6"/></svg></div><h3>Brand &amp; strategy</h3><p>Positioning, naming and a visual system your team can actually use.</p></div>
+    <div class="card"><div class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#ff6a3d" stroke-width="2" stroke-linecap="round"><rect x="3" y="4" width="18" height="14" rx="2"/><path d="M8 21h8M12 18v3"/></svg></div><h3>Web design</h3><p>Pages designed in the browser, tested on real devices, never in a vacuum.</p></div>
+    <div class="card"><div class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#ff6a3d" stroke-width="2" stroke-linecap="round"><path d="M8 6l-6 6 6 6M16 6l6 6-6 6M14 4l-4 16"/></svg></div><h3>Engineering</h3><p>Fast, accessible front ends on the stack you already run.</p></div>
+    <div class="card"><div class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#ff6a3d" stroke-width="2" stroke-linecap="round"><path d="M4 19V5M4 19h16M8 15l4-4 3 3 5-6"/></svg></div><h3>Growth</h3><p>Analytics, experiments and content that compound month after month.</p></div>
+    <div class="card"><div class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#ff6a3d" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg></div><h3>Care plans</h3><p>Updates, monitoring and small improvements, on a schedule you choose.</p></div>
+    <div class="card"><div class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#ff6a3d" stroke-width="2" stroke-linecap="round"><path d="M12 3l2.6 5.6 6.1.6-4.6 4.1 1.3 6-5.4-3.1-5.4 3.1 1.3-6L3.3 9.2l6.1-.6z"/></svg></div><h3>Workshops</h3><p>Half-day sessions that get a whole team pointing the same way.</p></div>
+  </div>
+</div></section>
+
+<div class="wrap"><div class="stats">
+  <div><b>140+</b><span>sites launched</span></div>
+  <div><b>11 yrs</b><span>in practice</span></div>
+  <div><b>0.8 s</b><span>median load time</span></div>
+  <div><b>4.9/5</b><span>client rating</span></div>
+</div></div>
+
+<section><div class="wrap">
+  <div class="kicker">Selected work</div>
+  <h2>Recent launches.</h2>
+  <div class="work">
+    <div class="shot">
+      <svg viewBox="0 0 640 360"><defs><linearGradient id="a" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ffd8c7"/><stop offset="1" stop-color="#ff6a3d"/></linearGradient></defs><rect width="640" height="360" fill="url(#a)"/><rect x="60" y="60" width="300" height="24" rx="6" fill="#fff" opacity=".9"/><rect x="60" y="100" width="220" height="14" rx="5" fill="#fff" opacity=".6"/><rect x="60" y="250" width="120" height="44" rx="12" fill="#14161c"/><circle cx="500" cy="200" r="110" fill="#fff" opacity=".35"/></svg>
+      <div class="cap"><b>Orbiqo · product site</b><span>2026</span></div>
+    </div>
+    <div class="shot">
+      <svg viewBox="0 0 480 360"><defs><linearGradient id="b" x1="0" y1="1" x2="1" y2="0"><stop offset="0" stop-color="#1c2b6b"/><stop offset="1" stop-color="#3d7bff"/></linearGradient></defs><rect width="480" height="360" fill="url(#b)"/><rect x="40" y="40" width="400" height="280" rx="18" fill="#fff" opacity=".12"/><rect x="70" y="80" width="180" height="20" rx="6" fill="#fff"/><rect x="70" y="120" width="320" height="10" rx="5" fill="#fff" opacity=".5"/><rect x="70" y="140" width="280" height="10" rx="5" fill="#fff" opacity=".5"/></svg>
+      <div class="cap"><b>Meridane · annual report</b><span>2025</span></div>
+    </div>
+  </div>
+</div></section>
+
+<div class="wrap"><div class="quote">
+  <img alt="" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 96 96'%3E%3Crect width='96' height='96' fill='%23ffd8c7'/%3E%3Ccircle cx='48' cy='38' r='18' fill='%23ff6a3d'/%3E%3Crect x='18' y='62' width='60' height='40' rx='30' fill='%23ff6a3d'/%3E%3C/svg%3E">
+  <div><p>“They treated our website like a product, not a brochure. Six months in, it's still the best thing we've shipped.”</p><small>Imani Okafor · Head of Marketing, Orbiqo (fictional)</small></div>
+</div></div>
+
+<section><div class="wrap">
+  <div class="kicker">Pricing</div>
+  <h2>Simple engagements.</h2>
+  <div class="plans">
+    <div class="plan"><b>Sprint</b><div class="price">$9k</div><span>Two weeks, one focused outcome.</span><ul><li>Discovery workshop</li><li>One landing page</li><li>Launch support</li></ul><a class="btn" href="#">Book a sprint</a></div>
+    <div class="plan hot"><b>Launch</b><div class="price">$28k</div><span>A complete new website.</span><ul><li>Strategy and brand refresh</li><li>Design system</li><li>Up to 12 page templates</li></ul><a class="btn" href="#">Start a launch</a></div>
+    <div class="plan"><b>Care</b><div class="price">$2k<small>/mo</small></div><span>Ongoing improvements.</span><ul><li>Monthly roadmap</li><li>Updates and monitoring</li><li>Experiments</li></ul><a class="btn" href="#">Join care</a></div>
+  </div>
+</div></section>
+
+<footer>
+  <div class="wrap">
+    <div><a class="logo" href="#" style="color:#fff"><i></i>Fernbrook</a><p style="margin-top:14px">A fictional studio, made for the Draftline demo.</p></div>
+    <div><h4>Studio</h4><a href="#">About</a><a href="#">Careers</a><a href="#">Journal</a></div>
+    <div><h4>Services</h4><a href="#">Design</a><a href="#">Engineering</a><a href="#">Growth</a></div>
+    <div><h4>Contact</h4><a href="#">hello@example.com</a><a href="#">Book a call</a></div>
+  </div>
+  <div class="fine">© 2026 Fernbrook Studio (fictional) · Demo page for Draftline</div>
+</footer>
+
+<script>
+  // a live canvas, to show Draftline keeps it animating
+  const c = document.getElementById("waves");
+  const g = c.getContext("2d");
+  function tick(t) {
+    const w = c.width, h = c.height;
+    const bg = g.createLinearGradient(0, 0, w, h);
+    bg.addColorStop(0, "#1b1f2a"); bg.addColorStop(1, "#2a1f3a");
+    g.fillStyle = bg; g.fillRect(0, 0, w, h);
+    for (let k = 0; k < 7; k++) {
+      g.beginPath();
+      for (let x = 0; x <= w; x += 8) {
+        const y = h * (0.25 + k * 0.09) + Math.sin(x / 120 + t / 900 + k) * 36 + Math.sin(x / 47 - t / 700 + k * 2) * 10;
+        x ? g.lineTo(x, y) : g.moveTo(x, y);
+      }
+      g.strokeStyle = `hsla(${18 + k * 26}, 90%, 62%, ${0.75 - k * 0.07})`;
+      g.lineWidth = 3;
+      g.stroke();
+    }
+    requestAnimationFrame(tick);
+  }
+  requestAnimationFrame(tick);
+</script>
+</body>
+</html>
