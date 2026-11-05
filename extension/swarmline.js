@@ -26,6 +26,8 @@
   const SANS = 'Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
   const MAX_UNITS = 3000;
   const CHAR_BUDGET = 9000; // exact letter positions per scan; past that they're estimated
+  // toolbar placement for this tab only: kept in memory, never stored
+  const prefs = { hudHidden: false, hudPos: null };
   const PALETTE = ["#FF5A6E", "#FFB020", "#19D3A2", "#3D9BFF", "#A46BFF", "#FF7AC8", "#2FE0F0", "#FF8A3D"];
 
   const SKIP = new Set([
@@ -409,8 +411,20 @@
                 // how to type it: clip the element to the letters so far, unless the
                 // element paints its own box (a button) - then reveal by colour
                 const mode = boxUnit && boxUnit.el === el ? "fade" : "clip";
+                // block children (a heading inside a wrapper that also has a line of its
+                // own text) stay outside the typing clip: they appear on their own schedule
+                const keep = [];
+                if (mode === "clip") {
+                  for (const c of el.children) {
+                    if (SKIP.has(c.localName)) continue;
+                    const d2 = cs(c).display;
+                    if (d2 === "none" || isInlineLevel(d2)) continue;
+                    const q = c.getBoundingClientRect();
+                    if (q.width >= 1 && q.height >= 1) keep.push({ x: q.left - r.left - 2, y: q.top - r.top - 2, w: q.width + 4, h: q.height + 4 });
+                  }
+                }
                 make(el, "text", r, s, boxUnit || parent, isFixed, {
-                  lines: t.lines, flow: t.flow, total: t.total, mode, fs: parseFloat(s.fontSize) || 16,
+                  lines: t.lines, flow: t.flow, total: t.total, mode, keep, fs: parseFloat(s.fontSize) || 16,
                   ink: s.color, caretColor: s.color,
                 });
                 madeText = true;
@@ -491,6 +505,17 @@ canvas.off{pointer-events:none}
 .hud button.pri{background:linear-gradient(90deg,#FF5A6E,#A46BFF 55%,#3D9BFF);color:#fff;font-weight:650}
 .hud button[hidden]{display:none}
 .hud .x{padding:8px 10px;color:#9CA3B4;background:transparent}
+.hud{cursor:grab;touch-action:none}
+.hud.dragging{cursor:grabbing;transition:opacity .45s ease}
+.hud.placed{bottom:auto;transform:translate(0,14px)}
+.hud.placed.on{transform:none}
+.hud.on.gone{opacity:0;pointer-events:none;transform:translate(-50%,14px)}
+.hud.placed.on.gone{transform:translate(0,14px)}
+.hud .ico{display:inline-flex;align-items:center;justify-content:center;padding:6px 8px}
+.hud .ico svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.toast{position:fixed;left:50%;bottom:26px;transform:translate(-50%,10px);padding:9px 14px;border-radius:12px;background:rgba(16,17,22,.86);color:#F4F5F8;font:500 12px/1.2 ${SANS};box-shadow:0 14px 36px rgba(0,0,0,.28);opacity:0;pointer-events:none;transition:opacity .35s ease,transform .35s ease;white-space:nowrap}
+.toast.on{opacity:1;transform:translate(-50%,0)}
+.toast kbd{font:650 11px/1 ${SANS};padding:3px 6px;border-radius:6px;background:rgba(255,255,255,.14);margin:0 2px}
 `;
 
   // ------------------------------------------------------------------------- app
@@ -557,8 +582,10 @@ canvas.off{pointer-events:none}
   <button data-a="speed" title="Build speed" aria-label="Build speed 1×">1×</button>
   <button data-a="finish" title="Show the finished page now (F)">Finish</button>
   <button data-a="replay" class="pri" hidden title="Build the page again">Replay</button>
+  <button data-a="hide" class="ico" title="Hide the controls for a clean recording (H) · drag the bar to move it" aria-label="Hide controls"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3l18 18"/><path d="M10.6 5.1A10.5 10.5 0 0 1 12 5c6 0 9.5 7 9.5 7a17 17 0 0 1-3.2 4.1M6.6 6.6C3.9 8.4 2.5 12 2.5 12s3.5 7 9.5 7a9.6 9.6 0 0 0 5.4-1.6"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg></button>
   <button data-a="close" class="x" title="Exit (Esc)" aria-label="Exit Swarmline">✕</button>
-</div>`;
+</div>
+<div class="toast" role="status"></div>`;
       document.documentElement.appendChild(host);
       this.host = host;
       this.root = root;
@@ -567,7 +594,48 @@ canvas.off{pointer-events:none}
       this.hud = root.querySelector(".hud");
       this.$ = (s) => root.querySelector(s);
       this.$('[data-a="speed"]').textContent = this.speed + "×";
+      this.toast = root.querySelector(".toast");
       this.resize();
+      if (prefs.hudPos) this.placeHud(prefs.hudPos.x, prefs.hudPos.y);
+      if (prefs.hudHidden) this.hud.classList.add("gone");
+    }
+
+    // ---------------------------------------------------------------- toolbar
+
+    // hide or show the controls (H), e.g. for a clean screen recording
+    setHud(show, quiet) {
+      prefs.hudHidden = !show;
+      this.hud.classList.toggle("gone", !show);
+      if (!show && !quiet) this.say("Controls hidden · press <kbd>H</kbd> to bring them back");
+    }
+
+    say(html, ms = 2200) {
+      const t = this.toast;
+      t.innerHTML = html;
+      t.classList.add("on");
+      clearTimeout(this._toastT);
+      this._toastT = setTimeout(() => t.classList.remove("on"), ms);
+    }
+
+    // put the bar at a spot on screen (kept inside the window)
+    placeHud(x, y) {
+      const h = this.hud;
+      const w = h.offsetWidth || 560;
+      const ht = h.offsetHeight || 44;
+      const px = clamp(x, 8, Math.max(8, innerWidth - w - 8));
+      const py = clamp(y, 8, Math.max(8, innerHeight - ht - 8));
+      h.classList.add("placed");
+      h.style.left = px + "px";
+      h.style.top = py + "px";
+      prefs.hudPos = { x: px, y: py };
+    }
+
+    resetHud() {
+      const h = this.hud;
+      h.classList.remove("placed");
+      h.style.left = "";
+      h.style.top = "";
+      prefs.hudPos = null;
     }
 
     resize() {
@@ -584,7 +652,10 @@ canvas.off{pointer-events:none}
         t.addEventListener(ev, fn, o);
         (this.unbinds || (this.unbinds = [])).push(() => t.removeEventListener(ev, fn, o));
       };
-      on(window, "resize", () => this.resize());
+      on(window, "resize", () => {
+        this.resize();
+        if (prefs.hudPos) this.placeHud(prefs.hudPos.x, prefs.hudPos.y);
+      });
       on(window, "pagehide", () => stop(true));
       on(window, "wheel", () => {
         if (this.jump) this.jump = null; // the reader took over
@@ -604,12 +675,37 @@ canvas.off{pointer-events:none}
           stop();
         } else if ((e.key === "t" || e.key === "T") && !e.ctrlKey && !e.metaKey && !e.altKey && !this.outro) this.setTour(!this.tour);
         else if ((e.key === "f" || e.key === "F") && !e.ctrlKey && !e.metaKey && !e.altKey) this.finish();
+        else if ((e.key === "h" || e.key === "H") && !e.ctrlKey && !e.metaKey && !e.altKey) this.setHud(prefs.hudHidden);
       }, true);
+      // drag the bar anywhere (double-click puts it back at the bottom)
+      let drag = null;
+      on(this.hud, "pointerdown", (e) => {
+        if (e.button !== 0 || e.target.closest("button")) return;
+        const r = this.hud.getBoundingClientRect();
+        drag = { dx: e.clientX - r.left, dy: e.clientY - r.top, id: e.pointerId };
+        this.hud.setPointerCapture(e.pointerId);
+        this.hud.classList.add("dragging");
+        e.preventDefault();
+      });
+      on(this.hud, "pointermove", (e) => {
+        if (drag && e.pointerId === drag.id) this.placeHud(e.clientX - drag.dx, e.clientY - drag.dy);
+      });
+      const endDrag = (e) => {
+        if (!drag || e.pointerId !== drag.id) return;
+        drag = null;
+        this.hud.classList.remove("dragging");
+      };
+      on(this.hud, "pointerup", endDrag);
+      on(this.hud, "pointercancel", endDrag);
+      on(this.hud, "dblclick", (e) => {
+        if (!e.target.closest("button")) this.resetHud();
+      });
       on(this.hud, "click", (e) => {
         const b = e.target.closest("button");
         if (!b) return;
         const a = b.dataset.a;
         if (a === "close") stop();
+        else if (a === "hide") this.setHud(false);
         else if (a === "tour") this.setTour(!this.tour);
         else if (a === "finish") this.finish();
         else if (a === "replay") replay();
@@ -935,16 +1031,21 @@ canvas.off{pointer-events:none}
     typedPath(u, n) {
       let d = "";
       let left = n;
-      for (const L of u.lines) {
+      for (let i = 0; i < u.lines.length; i++) {
+        const L = u.lines[i];
         if (left <= 0) break;
         const k = Math.min(left, L.edges.length);
         left -= k;
         const x0 = Math.min(L.x, 0) - 4;
         const right = k >= L.edges.length ? L.x + L.w + 6 : L.edges[k - 1] + 0.5;
         const y0 = L.y - 3;
-        const h = L.h + 6;
+        let h = L.h + 6;
+        // tight line-height: stop halfway into the next line, so its letters don't peek through
+        const N = u.lines[i + 1];
+        if (N && N.y < L.y + L.h && N.x < L.x + L.w && N.x + N.w > L.x) h = Math.min(h, (L.y + L.h + N.y) / 2 - y0);
         d += `M${(x0).toFixed(1)} ${y0.toFixed(1)}H${right.toFixed(1)}V${(y0 + h).toFixed(1)}H${x0.toFixed(1)}Z`;
       }
+      for (const k of u.keep || []) d += `M${k.x.toFixed(1)} ${k.y.toFixed(1)}H${(k.x + k.w).toFixed(1)}V${(k.y + k.h).toFixed(1)}H${k.x.toFixed(1)}Z`;
       return d ? `path('${d}')` : "path('M0 0Z')";
     }
 

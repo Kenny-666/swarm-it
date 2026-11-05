@@ -46,7 +46,7 @@ Great for:
 
 Private by design: Swarmline runs only on the tab you start it on, sends nothing anywhere and stores nothing. When you exit, the page is exactly as it was.
 
-Shortcuts: Alt+Shift+L start or stop · T auto-tour · F finish · Esc exit.
+Shortcuts: Alt+Shift+L start or stop · T auto-tour · F finish · H hide or show the controls (for clean recordings) · Esc exit. Drag the control bar to move it anywhere.
 ```
 
 ### Graphic assets (all in `store/`)

@@ -24,6 +24,8 @@ Everything appears in place on the real page, so the result is always exactly th
 | **Auto-tour** / **T** | Glide through the page screen by screen (on by default; T turns it off) |
 | **1× / 2× / 3×** | Build speed |
 | **Finish** / **F** | Show the finished page now |
+| **H** / eye button | Hide the controls for a clean screen recording (H brings them back) |
+| Drag the bar | Move the controls anywhere; double-click the bar to put it back |
 | **Esc** / **✕** | Exit (the page is restored exactly) |
 
 Turn the tour off to scroll yourself: the swarm builds whatever comes to rest on screen. With *prefers-reduced-motion* it builds at 3× with a smaller swarm, and the tour jumps instead of gliding.
