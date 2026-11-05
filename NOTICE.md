@@ -15,6 +15,9 @@ from Swarm Rebuild, with permission, and stay their authors':
 - the build gestures: the crosshair drag for boxes (and where it stops on big boxes), the
   text-box drag, typing rhythm and growing headings, pen-tool lines, the Alt-drag duplicate
   and the double-click edit
+- the drawing layer: rulers that slide in while a guide is pulled (with the selection span and
+  dotted lines from each selection to the rulers), red alignment guides pulled from the ruler,
+  and text dragged onto a guide until it snaps
 - the structure of the sound engine (`Sound`); its instrument, scale and sounds are Swarmline's
 
 Swarmline's own cursor set, colours, toolbar, sound design, icon, website and listing are

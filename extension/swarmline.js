@@ -1205,6 +1205,11 @@ canvas.off{pointer-events:none}
       } catch (err) {
         console.error("[swarmline] repeats", err);
       }
+      try {
+        this.findGuides(fresh);
+      } catch (err) {
+        console.error("[swarmline] guides", err);
+      }
       this.waiting.sort((a, b) => (a.fixed !== b.fixed ? (a.fixed ? -1 : 1) : a.y - b.y || a.id - b.id));
     }
 
@@ -1279,6 +1284,117 @@ canvas.off{pointer-events:none}
           }
         }
       }
+    }
+
+    // ---------------------------------------------------------------- guides
+    // Text that lines up (three or more blocks sharing a left edge, or a row sharing a top)
+    // gets a red guide pulled out of the ruler; the biggest of those texts is then typed a
+    // little off and dragged onto the guide until it snaps.
+    findGuides(list) {
+      if (!this.guides) this.guides = [];
+      if (this.guides.length >= 16) return;
+      const texts = list.filter((u) => u.kind === "text" && u.state === 0 && !u.fixed && !u.inCopy && u.fs >= 13 && u.w > 30);
+      const byX = new Map();
+      for (const u of texts) {
+        const k = Math.round(u.left0);
+        if (!byX.has(k)) byX.set(k, []);
+        byX.get(k).push(u);
+      }
+      let best = null;
+      for (const [x, l] of byX) if (l.length >= 3 && (!best || l.length > best[1].length)) best = [x, l];
+      if (best) {
+        const top = Math.min(...best[1].map((m) => m.y));
+        const members = best[1].filter((m) => m.y < top + 450).sort((a, b) => b.fs - a.fs).slice(0, 2);
+        this.addGuide("x", best[0], members, Math.min(...members.map((m) => m.y)) - 30);
+      }
+      const byY = new Map();
+      for (const u of texts) {
+        const k = Math.round(u.y);
+        if (!byY.has(k)) byY.set(k, []);
+        byY.get(k).push(u);
+      }
+      let row = null;
+      for (const [y, l] of byY) if (l.length >= 3 && (!row || l.length > row[1].length)) row = [y, l];
+      if (row && this.guides.length < 16) {
+        const m = row[1].find((u) => !u.snap);
+        if (m) this.addGuide("y", row[0], [m], row[0] - 30);
+      }
+    }
+
+    addGuide(axis, pos, members, gy) {
+      // axis "x": pos is a screen x; axis "y": pos is a page y
+      const g = { axis, pos, cur: pos, op: 0, flash: 0, dragging: false, vis: false, members, doneT: null };
+      const job = {
+        id: -(2e6 + this.guides.length), kind: "guide", g, el: document.documentElement, parent: null, fixed: false,
+        state: 0, phase: 0, p: 0, typed: 0, step: 0, st: 0, y: gy, w: 1, h: 1, left0: 0, top0: 0,
+        rad: [0, 0, 0, 0], label: "", lead: null, r: rand(-0.15, 0.15),
+      };
+      g.job = job;
+      for (const m of members) m.snap = g;
+      this.guides.push(g);
+      this.waiting.push(job);
+    }
+
+    // a guide: to the ruler, wait for it, then pull the line out to where the text aligns
+    stepGuide(u, T, dt) {
+      const g = u.g;
+      if (u.step === 0) {
+        if (this.arrived(u, "from", dt)) u.step = 1;
+      } else if (u.step === 1) {
+        if (this.rulers.t > 0.95) {
+          this.press(u);
+          g.vis = true;
+          g.dragging = true;
+          g.op = 1;
+          g.shownAt = this.time;
+          u.step = 2;
+        }
+      } else if (u.step === 2) {
+        if (this.arrived(u, "pull", dt)) {
+          g.cur = g.pos;
+          g.dragging = false;
+          if (this.sfx && u.lead) this.sfx.place("guide", u.lead.x, u.lead.y, 1, 1, this.W, this.H, 0);
+          u.step = 3;
+          u.st = 0;
+        }
+      } else {
+        u.st += T;
+        if (u.st >= 0.25) {
+          u.state = 2;
+          this.release(u);
+        }
+      }
+    }
+
+    // move a text block off (or back onto) its true place
+    setShift(u, x, y) {
+      u.shx = x;
+      u.shy = y;
+      if (x || y) this.shiftEl(u.el, x, y);
+      else this.unshift(u.el);
+    }
+
+    // while a text is dragged onto its guide it snaps once it's within 9px
+    dragSnap(u) {
+      const n = u.lead;
+      const R = this.liveRect(u);
+      if (!n || n.unit !== u || !R || !u.rel) return;
+      const bx = R.x - (u.shx || 0);
+      const by = R.y - (u.shy || 0);
+      let h = n.x - (bx + u.rel[0]);
+      let v = n.y - (by + u.rel[1]);
+      const g = u.snap;
+      const hit = (d, was) => {
+        if (Math.abs(d) >= 9) return d;
+        if (d !== 0 && was !== 0) {
+          if (g.flash < 0.5 && this.sfx) this.sfx.snap(n.x, this.W);
+          g.flash = 1;
+        }
+        return 0;
+      };
+      if (g.axis === "x") h = hit(h, u.shx || 0);
+      else v = hit(v, u.shy || 0);
+      this.setShift(u, h, v);
     }
 
     makeDup(g, k, v, top) {
@@ -1485,6 +1601,12 @@ canvas.off{pointer-events:none}
 
     complete(u, silent) {
       if (u.state === 2) return;
+      if (u.kind === "guide") {
+        this.release(u);
+        u.state = 2;
+        return;
+      }
+      if (u.shx || u.shy) this.setShift(u, 0, 0);
       if (u.scaleWas) this.unscaleText(u);
       this.release(u);
       u.state = 2;
@@ -1617,11 +1739,12 @@ canvas.off{pointer-events:none}
         const keep = [];
         for (const u of this.waiting) {
           if (u.state !== 0) continue;
-          if (u.kind !== "dup" && st.shown(u.el)) {
+          if (u.kind !== "dup" && u.kind !== "guide" && st.shown(u.el)) {
             this.complete(u, true);
             continue;
           }
           let go = busy < slots && (u.fixed || u.y <= this.frontier) && this.parentReady(u) && (!u.inCopy || u.inCopy.done);
+          if (go && u.snap && u.snap.job.state !== 2 && (u.snapWait = (u.snapWait || 0) + dt) < 1.6) go = false;
           // one copy at a time per group: each is duplicated from the nearest finished one
           if (go && u.kind === "dup" && u.group.copies.some((c) => c !== u && c.state === 1)) go = false;
           if (go && u.kind === "dup") {
@@ -1656,6 +1779,11 @@ canvas.off{pointer-events:none}
             u.bend = rand(-0.03, 0.03);
             u.off = [rand(14, 30), rand(10, 24)];
           }
+          if (u.kind === "text" && u.snap && u.snap.vis) {
+            // typed a little off, to be dragged onto its guide afterwards
+            if (u.snap.axis === "x") this.setShift(u, rand(28, 64), rand(-8, 8));
+            else this.setShift(u, rand(-8, 8), rand(18, 34) * (Math.random() < 0.5 ? -1 : 1));
+          }
           if (u.kind === "text") {
             u.edit = !!u.inCopy && !u.dupSame;
             u.jx = rand(-5, 5);
@@ -1675,6 +1803,20 @@ canvas.off{pointer-events:none}
 
       // each piece is made by its cursor, step by step, at the swarm's tempo
       const T = dt * this.tempo;
+      // rulers slide in while a guide is being pulled (and linger a moment)
+      const R0 = this.rulers || (this.rulers = { t: 0, lastNeed: -10 });
+      if (this.active.some((x) => x.kind === "guide" && x.state === 1)) R0.lastNeed = this.time;
+      const rt = this.time - R0.lastNeed < 0.7 ? 1 : 0;
+      R0.t += (rt - R0.t) * Math.min(1, dt * 10);
+      if (Math.abs(rt - R0.t) < 0.002) R0.t = rt;
+      for (const g of this.guides || []) {
+        if (!g.vis) continue;
+        if (g.flash > 0) g.flash = Math.max(0, g.flash - dt * 1.5);
+        if (g.dragging || g.op <= 0) continue;
+        const busyM = g.members.some((m) => m.state === 1);
+        if (g.members.every((m) => m.state === 2)) g.doneT = g.doneT == null ? this.time : g.doneT;
+        if ((g.doneT != null && this.time - g.doneT > 1.2) || (this.time - g.shownAt > 7 && !busyM)) g.op = Math.max(0, g.op - dt * 1.2);
+      }
       for (const u of this.active) {
         if (u.state !== 1) continue;
         if (!this.inView(u, v, top, 80)) {
@@ -1687,6 +1829,7 @@ canvas.off{pointer-events:none}
         }
         u.offT = 0;
         if (u.kind === "dup") this.stepDup(u, T, dt);
+        else if (u.kind === "guide") this.stepGuide(u, T, dt);
         else if (u.line) this.stepLine(u, T, dt);
         else if (u.kind === "text") this.stepText(u, T, dt);
         else if (u.kind === "glyph") this.stepGlyph(u, T, dt);
@@ -1891,8 +2034,46 @@ canvas.off{pointer-events:none}
         }
         return;
       }
+      if (u.step === 6) {
+        u.st += T;
+        if (u.st >= (u.edit ? 0.3 : 0.2)) {
+          if (u.snap && u.snap.vis && (u.shx || u.shy)) {
+            u.step = 20;
+            u.st = 0;
+          } else this.complete(u);
+        }
+        return;
+      }
+      // onto the guide: grab, nudge until it snaps, settle
+      if (u.step === 20) {
+        if (this.arrived(u, "grab", dt)) {
+          this.press(u);
+          u.step = 21;
+        }
+        return;
+      }
+      if (u.step === 21) {
+        if (this.arrived(u, "nudge", dt)) {
+          u.step = 22;
+          u.st = 0;
+        }
+        return;
+      }
+      if (u.step === 22) {
+        u.st += T;
+        if (u.st >= 0.1) u.step = 23;
+        return;
+      }
+      if (u.step === 23) {
+        if (this.arrived(u, "settle", dt)) {
+          this.setShift(u, 0, 0);
+          u.step = 24;
+          u.st = 0;
+        }
+        return;
+      }
       u.st += T;
-      if (u.st >= (u.edit ? 0.3 : 0.2)) this.complete(u);
+      if (u.st >= 0.25) this.complete(u);
     }
 
     beginTyping(u) {
@@ -2269,6 +2450,29 @@ canvas.off{pointer-events:none}
         }
         return { key: "drag", p: [R.x + u.endRel[0], R.y + u.endRel[1]], shape: u.step === 2 ? "cross" : "arrow", o: { speed: 0.75, drag: true, bend: 0 } };
       }
+      if (u.kind === "guide") {
+        const top = this.env.top;
+        const vy = this.env.view().y;
+        const from = u.g.axis === "x" ? [10, H * (0.45 + u.r)] : [W * 0.3 + u.r * 200, 10];
+        const tool = u.g.axis === "x" ? "ew" : "ns";
+        if (u.step <= 1) return { key: "from", p: from, shape: u.step === 1 ? tool : "arrow" };
+        const to = u.g.axis === "x" ? [u.g.pos, from[1] + 40] : [from[0] + 30, u.g.pos - top + vy];
+        return { key: "pull", p: to, shape: u.step === 2 ? tool : "arrow", o: { speed: 0.55, drag: true } };
+      }
+      if (u.kind === "text" && u.step >= 20) {
+        const tb = this.textBox(u, R);
+        if (!u.rel) u.rel = [tb.x - R.x + Math.min(tb.w * 0.4, 60) + rand(-6, 6), tb.y - R.y + Math.min(tb.h * 0.5, 22)];
+        const bx = R.x - (u.shx || 0);
+        const by = R.y - (u.shy || 0);
+        const p = [bx + u.rel[0], by + u.rel[1]];
+        if (u.step === 20) return { key: "grab", p: [R.x + u.rel[0], R.y + u.rel[1]], shape: "arrow" };
+        if (u.step === 21) {
+          if (!u.over) u.over = u.snap.axis === "x" ? [-rand(2, 5), rand(-6, 6)] : [rand(-6, 6), -rand(2, 5)];
+          return { key: "nudge", p: [p[0] + u.over[0], p[1] + u.over[1]], shape: "arrow", o: { speed: 0.6, drag: true } };
+        }
+        if (u.step === 22) return { key: "nudge", p: [n.x, n.y], shape: "arrow" };
+        return { key: "settle", p, shape: "arrow", o: { speed: 2 } };
+      }
       if (u.kind === "text") {
         const tb = this.textBox(u, R);
         if (u.step === 0) {
@@ -2498,8 +2702,9 @@ canvas.off{pointer-events:none}
         cross: new Path2D("M12 2.5 V8.5 M12 15.5 V21.5 M2.5 12 H8.5 M15.5 12 H21.5"),
         ibeam: new Path2D("M8.5 4.2 H15.5 M12 4.2 V19.8 M8.5 19.8 H15.5"),
         plus: new Path2D("M21.5 18.9 V24.1 M18.9 21.5 H24.1"),
+        ew: new Path2D("M6.5 8.5 L3 12 L6.5 15.5 M17.5 8.5 L21 12 L17.5 15.5 M3.5 12 H20.5"),
       });
-      const HOTS = { arrow: [4.5, 3.2], dup: [4.5, 3.2], pen: [3.2, 3.2], "pen-add": [3.2, 3.2], cross: [12, 12], ibeam: [12, 12] };
+      const HOTS = { arrow: [4.5, 3.2], dup: [4.5, 3.2], pen: [3.2, 3.2], "pen-add": [3.2, 3.2], cross: [12, 12], ibeam: [12, 12], ew: [12, 12], ns: [12, 12] };
       const sh = HOTS[n.shape] ? n.shape : "arrow";
       const [hx, hy] = HOTS[sh];
       const s = 1.08 * (1 - n.press * 0.12);
@@ -2565,6 +2770,19 @@ canvas.off{pointer-events:none}
         g.strokeStyle = "#fff";
         g.lineWidth = 1.2;
         g.stroke();
+      } else if (sh === "ew" || sh === "ns") {
+        if (sh === "ns") {
+          g.translate(12, 12);
+          g.rotate(Math.PI / 2);
+          g.translate(-12, -12);
+        }
+        g.strokeStyle = "#fff";
+        g.lineWidth = 4.2;
+        g.stroke(P.ew);
+        g.shadowColor = "transparent";
+        g.strokeStyle = c;
+        g.lineWidth = 2;
+        g.stroke(P.ew);
       } else {
         g.strokeStyle = "#fff";
         g.lineWidth = 4;
@@ -2611,11 +2829,19 @@ canvas.off{pointer-events:none}
         if (R) rects.set(u, R);
       }
       this.stepSwarm(rects); // pointers first, so a shape being dragged sits exactly under its pointer
-      for (const u of this.active) if (u.kind === "dup" && u.step === 3 && u.state === 1) this.dragCopy(u);
+      for (const u of this.active) {
+        if (u.state !== 1) continue;
+        if (u.kind === "dup" && u.step === 3) this.dragCopy(u);
+        else if (u.kind === "guide" && u.step === 2 && u.lead) u.g.cur = u.g.axis === "x" ? u.lead.x : u.lead.y + top - v.y;
+        else if (u.kind === "text" && u.step >= 21 && u.step <= 23) this.dragSnap(u);
+      }
+      this.selRects = [];
       for (const u of this.active) {
         const R = rects.get(u);
         if (R) this.mark(g, u, R);
       }
+      this.drawGuides(g, v, top);
+      this.drawRulers(g, v, top);
       if (this.sweep) {
         const s = this.sweep;
         const e = s.vTop + (s.vBottom - s.vTop) * easeInOut(s.p);
@@ -2642,8 +2868,147 @@ canvas.off{pointer-events:none}
       else g.rect(x, y, w, h);
     }
 
+    // red alignment guides, glowing for a moment when something snaps to them
+    drawGuides(g, v, top) {
+      for (const gd of this.guides || []) {
+        if (!gd.vis || gd.op <= 0) continue;
+        g.save();
+        g.globalAlpha = gd.op;
+        g.strokeStyle = MEASURE;
+        g.lineWidth = 1 + gd.flash;
+        if (gd.flash > 0) {
+          g.shadowColor = MEASURE;
+          g.shadowBlur = 2 + gd.flash * 3;
+        }
+        g.beginPath();
+        if (gd.axis === "x") {
+          const x = Math.round(gd.cur) + 0.5;
+          g.moveTo(x, 0);
+          g.lineTo(x, this.H);
+        } else {
+          const y = Math.round(gd.cur - top + v.y) + 0.5;
+          g.moveTo(0, y);
+          g.lineTo(this.W, y);
+        }
+        g.stroke();
+        g.restore();
+      }
+    }
+
+    // rulers: page coordinates along the top and left, the selection's span in blue,
+    // a guide's position in red; they slide in while a guide is pulled out
+    drawRulers(g, v, top) {
+      const t = this.rulers ? this.rulers.t : 0;
+      if (t <= 0.001) return;
+      const W = this.W;
+      const H = this.H;
+      const RS = 20;
+      const off = (t - 1) * RS;
+      g.save();
+      g.font = `500 9px ${SANS}`;
+      g.textBaseline = "alphabetic";
+      // top
+      g.save();
+      g.translate(0, off);
+      g.fillStyle = "#171923";
+      g.fillRect(0, 0, W, RS);
+      g.fillStyle = "#2D3140";
+      g.fillRect(0, RS - 1, W, 1);
+      for (const r of this.selRects) {
+        g.fillStyle = rgba(INK, 0.16);
+        g.fillRect(r.x, 0, r.w, RS - 1);
+      }
+      g.strokeStyle = "#4A5064";
+      g.lineWidth = 1;
+      g.beginPath();
+      for (let c = 0; c < W; c += 50) {
+        const x = Math.round(c) + 0.5;
+        g.moveTo(x, c % 100 === 0 ? 13 : 16);
+        g.lineTo(x, RS);
+      }
+      g.stroke();
+      g.fillStyle = "#8C93A6";
+      for (let c = 100; c < W; c += 100) g.fillText(String(c), c + 3, 11);
+      for (const r of this.selRects) {
+        g.fillStyle = "#6E9BFF";
+        g.fillText(String(Math.round(r.x)), r.x + 3, 11);
+      }
+      for (const gd of this.guides || []) {
+        if (!gd.dragging || gd.axis !== "x") continue;
+        g.fillStyle = MEASURE;
+        g.fillRect(Math.round(gd.cur), 0, 1, RS);
+        g.fillText(String(Math.round(gd.cur)), gd.cur + 4, 11);
+      }
+      g.restore();
+      // left
+      g.save();
+      g.translate(off, 0);
+      g.fillStyle = "#171923";
+      g.fillRect(0, 0, RS, H);
+      g.fillStyle = "#2D3140";
+      g.fillRect(RS - 1, 0, 1, H);
+      for (const r of this.selRects) {
+        g.fillStyle = rgba(INK, 0.16);
+        g.fillRect(0, r.y, RS - 1, r.h);
+      }
+      const page = (y) => y - top + v.y; // page y -> screen y
+      const y0 = Math.floor((top - v.y) / 50) * 50;
+      g.strokeStyle = "#4A5064";
+      g.beginPath();
+      for (let c = y0; page(c) < H; c += 50) {
+        const y = Math.round(page(c)) + 0.5;
+        g.moveTo(c % 100 === 0 ? 13 : 16, y);
+        g.lineTo(RS, y);
+      }
+      g.stroke();
+      g.fillStyle = "#8C93A6";
+      for (let c = Math.ceil(y0 / 100) * 100; page(c) < H; c += 100) {
+        const y = page(c);
+        if (y < RS + 4) continue;
+        g.save();
+        g.translate(11, y - 3);
+        g.rotate(-Math.PI / 2);
+        g.fillText(String(c), 0, 0);
+        g.restore();
+      }
+      for (const gd of this.guides || []) {
+        if (!gd.dragging || gd.axis !== "y") continue;
+        g.fillStyle = MEASURE;
+        g.fillRect(0, Math.round(page(gd.cur)), RS, 1);
+      }
+      g.restore();
+      // corner
+      g.globalAlpha = t;
+      g.fillStyle = "#171923";
+      g.fillRect(0, 0, RS, RS);
+      g.restore();
+    }
+
     // a selection: a crisp 1px box, square corner handles and the size under it
     sel(g, x, y, w, h, col, handles, badge) {
+      // while the rulers are out, dotted lines run from the selection to each ruler
+      const rt = this.rulers ? this.rulers.t : 0;
+      if (handles && col === INK) (this.selRects || (this.selRects = [])).push({ x, y, w, h });
+      if (handles && rt > 0.05 && w > 0 && h > 0) {
+        g.save();
+        g.globalAlpha = rt;
+        g.strokeStyle = INK;
+        g.lineWidth = 1;
+        g.setLineDash([2, 2]);
+        g.beginPath();
+        const my = Math.round(y + h / 2) + 0.5;
+        const mx = Math.round(x + w / 2) + 0.5;
+        if (x > 20) {
+          g.moveTo(20, my);
+          g.lineTo(x, my);
+        }
+        if (y > 20) {
+          g.moveTo(mx, 20);
+          g.lineTo(mx, y);
+        }
+        g.stroke();
+        g.restore();
+      }
       g.save();
       g.strokeStyle = col;
       g.lineWidth = 1;
@@ -2678,6 +3043,7 @@ canvas.off{pointer-events:none}
     // what a designer sees while each piece is made
     mark(g, u, R) {
       const { x, y, w, h } = R;
+      if (u.kind === "guide") return;
       if (u.kind === "dup") {
         if (!u.src || !u.step) return;
         const S = u.src.getBoundingClientRect();
@@ -2767,7 +3133,7 @@ canvas.off{pointer-events:none}
           }
           return;
         }
-        if (u.step >= 4) this.sel(g, tb.x - 2, tb.y - 2, tb.w + 4, tb.h + 4, INK, true, true);
+        if (u.step >= 4) this.sel(g, tb.x - 2, tb.y - 2, tb.w + 4, tb.h + 4, INK, true, u.step < 20);
         return;
       }
       if (u.kind === "glyph" && u.step >= 1) this.sel(g, x - 2, y - 2, w + 4, h + 4, INK, true, false);
