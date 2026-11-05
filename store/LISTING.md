@@ -36,7 +36,7 @@ Swarmline sends a swarm of glowing, colourful pen-nibs across the page. They wor
 
 Everything appears in place on the real page, in the site's own colours and fonts. Nothing is copied or redrawn, so the finished page is exactly the live site, with its animations, video and links all working.
 
-Turn on Auto-tour and Swarmline glides down the page screen by screen, centring each one before the swarm builds it. Choose 1×, 2× or 3× speed, or press Finish to show the whole page at once.
+Auto-tour is on from the start: Swarmline glides down the page screen by screen, centring each one before the swarm builds it, and moves on the moment a screen is finished. Press T to turn it off and scroll yourself. Choose 1×, 2× or 3× speed, or press Finish to show the whole page at once.
 
 Great for:
 • Screen recordings, reels and launch videos of your own website

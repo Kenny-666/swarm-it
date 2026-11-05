@@ -37,6 +37,7 @@
   const LANDMARK = new Set(["header", "nav", "main", "section", "article", "aside", "footer", "form", "figure", "button", "ul", "ol", "table"]);
 
   const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
+  const TAU = Math.PI * 2;
   const easeOut = (t) => 1 - Math.pow(1 - t, 3);
   const easeInOut = (t) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
   const easeSine = (t) => (1 - Math.cos(Math.PI * t)) / 2;
@@ -492,7 +493,7 @@ canvas.off{pointer-events:none}
       this.stage = new Stage();
       this.dead = false;
       this.speed = reduced() ? 3 : 1;
-      this.tour = false;
+      this.tour = true; // on by default: glide through the page on its own
       this.units = [];
       this.waiting = [];
       this.active = [];
@@ -544,7 +545,7 @@ canvas.off{pointer-events:none}
 <div class="hud" role="toolbar" aria-label="Swarmline">
   <svg class="ring" viewBox="0 0 30 30" aria-hidden="true"><defs><linearGradient id="sw-grad" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#FF5A6E"/><stop offset=".55" stop-color="#A46BFF"/><stop offset="1" stop-color="#3D9BFF"/></linearGradient></defs><circle class="bg" cx="15" cy="15" r="12"/><circle class="fg" cx="15" cy="15" r="12" transform="rotate(-90 15 15)" stroke-dasharray="75.4" stroke-dashoffset="75.4"/></svg>
   <div class="meta" aria-live="polite"><span class="t">Clearing the canvas…</span><span class="s">&nbsp;</span></div>
-  <button data-a="tour" aria-pressed="false" title="Glide through the page screen by screen (T)">Auto-tour</button>
+  <button data-a="tour" class="${this.tour ? "on" : ""}" aria-pressed="${this.tour}" title="Glide through the page screen by screen (T)">Auto-tour</button>
   <button data-a="speed" title="Build speed" aria-label="Build speed 1×">1×</button>
   <button data-a="finish" title="Show the finished page now (F)">Finish</button>
   <button data-a="replay" class="pri" hidden title="Build the page again">Replay</button>
@@ -882,7 +883,7 @@ canvas.off{pointer-events:none}
           this.bands = this.addBand(this.bands, s.top, s.bottom);
           this.sweep = null;
         }
-      } else if (resting && this.restFor > 0.15) {
+      } else if (resting && this.restFor > 0.08) {
         const vt = top;
         const vb = Math.min(env.height, top + v.h);
         const gap = this.gapIn(vt, vb);
@@ -906,8 +907,9 @@ canvas.off{pointer-events:none}
           this.dwell += dt;
           if (this.dwell > 0.5) this.finish();
         } else if (this.tour && resting) {
+          // a finished screen hands straight over to the next one
           this.dwell += dt * this.speed;
-          if (this.dwell > 0.45) {
+          if (this.dwell > 0.12) {
             this.dwell = 0;
             const gap = atEnd ? this.gapIn(0, env.height) : null;
             const to = gap ? clamp(gap.top, 0, env.maxTop()) : Math.min(env.maxTop(), top + v.h * 0.82);
@@ -997,9 +999,72 @@ canvas.off{pointer-events:none}
           i, unit: null, role: 0, attached: false, vis: 0, color: PALETTE[i % PALETTE.length],
           x: this.W / 2 + Math.cos(a) * 6, y: this.H / 2 + Math.sin(a) * 6,
           vx: Math.cos(a) * (700 + (i % 4) * 160), vy: Math.sin(a) * (700 + (i % 4) * 160), ang: a,
-          trail: [], seed: Math.random() * Math.PI * 2, born: 0.55 + i * 0.012, size: 0.85 + (i % 3) * 0.18,
+          trail: [], seed: Math.random() * Math.PI * 2, born: 0.55 + i * 0.012, size: 1.2 + (i % 3) * 0.14,
+          ring: i % 3 === 2 ? 1 : 0, orb: a, orbiting: false,
         });
       }
+      this.ringPhase = [0, 0];
+    }
+
+    // where the free swarm circles: over the next thing to build, so it's always
+    // heading for the next section instead of waiting in the middle
+    nextSpot(rects, v) {
+      const top = this.env.top;
+      for (const u of this.waiting) {
+        if (u.state !== 0 || u.fixed) continue;
+        const y = u.y - top + v.y;
+        if (y > v.y + v.h) break; // sorted by y: nothing further is on screen
+        if (y + u.h < v.y) continue;
+        return [u.left0 + Math.min(u.w, 520) / 2, y + Math.min(u.h, 220) / 2];
+      }
+      const fr = this.focus && rects.get(this.focus);
+      if (fr) return [fr.x + fr.w / 2, fr.y + Math.min(fr.h, 160) / 2];
+      // screen done: drift low, the way the tour is about to go
+      return [v.x + v.w / 2, v.y + v.h * (this.tour ? 0.6 : 0.46)];
+    }
+
+    // free nibs fly an evenly spaced double orbit: outer ring one way, inner the other
+    orbitTargets(free, dt) {
+      const W = this.W;
+      const H = this.H;
+      const rings = [[], []];
+      for (const n of free) rings[n.ring].push(n);
+      const total = free.length;
+      const R0 = clamp(54 + total * 4.2, 74, 150);
+      const radii = [R0, R0 * 0.56];
+      const speeds = [0.85, -1.25];
+      const cx = clamp(this.anchor[0], R0 + 24, W - R0 - 24);
+      const cy = clamp(this.anchor[1], R0 + 24, H - R0 - 96);
+      const out = new Map();
+      for (let r = 0; r < 2; r++) {
+        const L = rings[r];
+        const m = L.length;
+        this.ringPhase[r] += speeds[r] * dt;
+        if (!m) continue;
+        const ph = this.ringPhase[r];
+        for (const n of L) {
+          if (!n.orbiting) {
+            n.orbiting = true;
+            n.orb = Math.atan2(n.y - cy, n.x - cx); // join the ring where it is
+          }
+        }
+        // keep their order round the ring, ease each into an even slot
+        const rel = (n) => (((n.orb - ph) % TAU) + TAU) % TAU;
+        L.sort((p, q) => rel(p) - rel(q));
+        const ek = 1 - Math.exp(-dt * 4);
+        for (let k = 0; k < m; k++) {
+          const n = L[k];
+          const slot = ph + (TAU * (k + 0.5)) / m; // half a step in, so no nib sits on the seam
+          let d = (slot - n.orb) % TAU;
+          if (d > Math.PI) d -= TAU;
+          if (d < -Math.PI) d += TAU;
+          n.orb += speeds[r] * dt + d * ek;
+          // a soft rosette: the ring breathes in three lobes as it turns
+          const rr = radii[r] * (1 + 0.05 * Math.sin(3 * (n.orb - ph) + this.time * 1.2 + r * Math.PI));
+          out.set(n, [cx + Math.cos(n.orb) * rr, cy + Math.sin(n.orb) * rr]);
+        }
+      }
+      return out;
     }
 
     crew(u) {
@@ -1068,23 +1133,26 @@ canvas.off{pointer-events:none}
       const dt = this.dt;
       const W = this.W;
       const H = this.H;
-      const fr = this.focus && rects.get(this.focus);
-      const want = fr ? [fr.x + fr.w / 2, fr.y + Math.min(fr.h, 160) / 2] : [W / 2, H * 0.45];
-      if (!this.anchor) this.anchor = want.slice();
-      const ak = 1 - Math.exp(-dt * 2.4);
+      const want = this.nextSpot(rects, v);
+      if (!this.anchor) this.anchor = [W / 2, H * 0.45];
+      const ak = 1 - Math.exp(-dt * 3);
       this.anchor[0] += (want[0] - this.anchor[0]) * ak;
       this.anchor[1] += (want[1] - this.anchor[1]) * ak;
       let sweepY = null;
       if (this.sweep) sweepY = this.sweep.vTop + (this.sweep.vBottom - this.sweep.vTop) * easeInOut(this.sweep.p);
       const free = this.nibs.filter((n) => !n.unit || !rects.get(n.unit));
+      const orbit = !this.outro && sweepY == null ? this.orbitTargets(free, dt) : null;
       for (const n of this.nibs) {
         n.vis = this.time < n.born ? 0 : Math.min(1, n.vis + dt / 0.3);
         let tx;
         let ty;
         let stick = false;
         const R = n.unit && rects.get(n.unit);
+        const target = orbit && orbit.get(n);
+        if (!target) n.orbiting = false;
         if (this.outro) {
-          const a = Math.atan2(n.y - H / 2, n.x - W / 2) || n.seed;
+          // the rings unwind: each nib spirals out and away
+          const a = (Math.atan2(n.y - H / 2, n.x - W / 2) || n.seed) + 0.8;
           tx = n.x + Math.cos(a) * 900;
           ty = n.y + Math.sin(a) * 900;
         } else if (R) {
@@ -1095,13 +1163,11 @@ canvas.off{pointer-events:none}
           const j = free.indexOf(n);
           tx = v.x + (v.w * (j + 0.5)) / Math.max(1, free.length);
           ty = sweepY + Math.sin(this.time * 6 + j) * 6;
+        } else if (target) {
+          [tx, ty] = target;
         } else {
-          // idle: a loose, lively cloud near the latest work
-          const j = free.indexOf(n);
-          const a = n.seed + this.time * (0.7 + (j % 3) * 0.18) * (j % 2 ? 1 : -1);
-          const rr = 40 + (j % 6) * 16 + Math.sin(this.time * 1.3 + j) * 10;
-          tx = this.anchor[0] + Math.cos(a) * rr;
-          ty = this.anchor[1] + Math.sin(a) * rr * 0.6;
+          tx = this.anchor[0];
+          ty = this.anchor[1];
         }
         if (stick) {
           const k = 1 - Math.exp(-dt * 36);
@@ -1115,28 +1181,35 @@ canvas.off{pointer-events:none}
           const dx = tx - n.x;
           const dy = ty - n.y;
           const d = Math.hypot(dx, dy) || 1;
-          const sp = Math.min(2800, d * 8.5);
-          let ax = (dx / d) * sp - n.vx;
-          let ay = (dy / d) * sp - n.vy;
+          // arrive smoothly: fast across the page, easing off as it closes in
+          const sp = Math.min(2200, d * 6.2);
+          let ax = ((dx / d) * sp - n.vx) * 9;
+          let ay = ((dy / d) * sp - n.vy) * 9;
           for (const m of this.nibs) {
-            if (m === n) continue;
+            if (m === n || (n.orbiting && m.orbiting)) continue; // the rings keep their own spacing
             const ex = n.x - m.x;
             const ey = n.y - m.y;
             const e = ex * ex + ey * ey;
-            if (e < 324 && e > 0.01) {
+            if (e < 576 && e > 0.01) {
               const s = Math.sqrt(e);
-              ax += (ex / s) * 1100;
-              ay += (ey / s) * 1100;
+              const push = 1400 * (1 - s / 24);
+              ax += (ex / s) * push;
+              ay += (ey / s) * push;
             }
           }
           const am = Math.hypot(ax, ay) || 1;
-          const step = Math.min(10500 * dt, am);
+          const step = Math.min(8200 * dt, am * dt);
           n.vx += (ax / am) * step;
           n.vy += (ay / am) * step;
           n.x += n.vx * dt;
           n.y += n.vy * dt;
         }
-        if (Math.hypot(n.vx, n.vy) > 40) n.ang = Math.atan2(n.vy, n.vx);
+        // turn smoothly towards the direction of travel (no snapping or jitter)
+        if (Math.hypot(n.vx, n.vy) > 30) {
+          let da = Math.atan2(n.vy, n.vx) - n.ang;
+          da = ((da + Math.PI) % TAU + TAU) % TAU - Math.PI;
+          n.ang += da * (1 - Math.exp(-dt * (stick ? 9 : 14)));
+        }
         n.trail.push(n.x, n.y);
         if (n.trail.length > 36) n.trail.splice(0, 2);
       }
@@ -1154,7 +1227,7 @@ canvas.off{pointer-events:none}
         for (let i = 1; i < segs; i++) {
           const f = i / segs;
           g.globalAlpha = a * f * f * 0.7;
-          g.lineWidth = (0.6 + 3 * f) * n.size;
+          g.lineWidth = (0.6 + 2.6 * f) * n.size;
           g.beginPath();
           g.moveTo(T[i * 2 - 2], T[i * 2 - 1]);
           g.lineTo(T[i * 2], T[i * 2 + 1]);
@@ -1169,21 +1242,25 @@ canvas.off{pointer-events:none}
         g.save();
         g.translate(n.x, n.y);
         g.rotate(n.ang);
-        // soft glow, then a pen-nib head with a bright core
+        // soft glow, then an arrow head with a crisp light edge and a bright core
         g.shadowColor = n.color;
-        g.shadowBlur = 14;
+        g.shadowBlur = 16;
         g.fillStyle = n.color;
         g.beginPath();
-        g.moveTo(8 * s, 0);
-        g.lineTo(-4.5 * s, -4.2 * s);
-        g.lineTo(-2 * s, 0);
-        g.lineTo(-4.5 * s, 4.2 * s);
+        g.moveTo(9 * s, 0);
+        g.lineTo(-5 * s, -5 * s);
+        g.lineTo(-2.2 * s, 0);
+        g.lineTo(-5 * s, 5 * s);
         g.closePath();
         g.fill();
         g.shadowBlur = 0;
-        g.fillStyle = "rgba(255,255,255,0.92)";
+        g.lineJoin = "round";
+        g.lineWidth = 1.1;
+        g.strokeStyle = "rgba(255,255,255,0.85)";
+        g.stroke();
+        g.fillStyle = "rgba(255,255,255,0.95)";
         g.beginPath();
-        g.arc(1.6 * s, 0, 1.6 * s, 0, Math.PI * 2);
+        g.arc(1.8 * s, 0, 1.5 * s, 0, Math.PI * 2);
         g.fill();
         g.restore();
       }

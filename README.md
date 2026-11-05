@@ -4,7 +4,7 @@
 
 ![Swarmline building a page](store/marquee-1400x560.png)
 
-Swarmline is a Chrome extension. Click it on any page and the page becomes a blank canvas in its own colours. A swarm of glowing, colourful pen-nibs then builds it back in reading order: crews trace each box with a live size readout before it fills in for real, type every headline and paragraph letter by letter, and scan images into place. When a screen is done, the swarm rides a light sweep across it and Auto-tour glides on to the next.
+Swarmline is a Chrome extension. Click it on any page and the page becomes a blank canvas in its own colours. A swarm of glowing, colourful pen-nibs then builds it back in reading order: crews trace each box with a live size readout before it fills in for real, type every headline and paragraph letter by letter, and scan images into place. When a screen is done, the swarm rides a light sweep across it and Auto-tour glides straight on to the next. Between jobs the free nibs circle in two counter-rotating rings over the next section to be built.
 
 Everything appears in place on the real page, so the result is always exactly the live site: its fonts, GSAP and CSS animations, video, canvases and links keep working throughout.
 
@@ -21,12 +21,12 @@ Everything appears in place on the real page, so the result is always exactly th
 | | |
 | --- | --- |
 | **Alt+Shift+L** or the toolbar button | Start (again to stop) |
-| **Auto-tour** / **T** | Glide through the page screen by screen |
+| **Auto-tour** / **T** | Glide through the page screen by screen (on by default; T turns it off) |
 | **1× / 2× / 3×** | Build speed |
 | **Finish** / **F** | Show the finished page now |
 | **Esc** / **✕** | Exit (the page is restored exactly) |
 
-You can also scroll yourself: the swarm builds whatever comes to rest on screen. With *prefers-reduced-motion* it builds at 3× with a smaller swarm, and the tour jumps instead of gliding.
+Turn the tour off to scroll yourself: the swarm builds whatever comes to rest on screen. With *prefers-reduced-motion* it builds at 3× with a smaller swarm, and the tour jumps instead of gliding.
 
 ## How it works
 
