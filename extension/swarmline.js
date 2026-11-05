@@ -1253,15 +1253,17 @@ canvas.off{pointer-events:none}
         const buckets = new Map();
         for (const c of P.children) {
           const us = unitsIn.get(c);
-          if (!us || us.length < 2 || this.roleOf.has(c)) continue;
+          if (!us || !us.length || this.roleOf.has(c)) continue;
+          // a single long paragraph reads better typed than duplicated
+          if (us.length === 1 && us[0].kind === "text" && c.textContent.trim().length > 40) continue;
           const r = c.getBoundingClientRect();
-          if (r.width < 24 || r.height < 16 || r.height > v.h * 0.8 || r.width > v.w * 0.96) continue;
+          if (r.width < 14 || r.height < 12 || r.height > v.h * 0.8 || r.width > v.w * 0.96) continue;
           if (getComputedStyle(c).translate !== "none") continue;
           const counts = {};
           for (const u of us) counts[u.kind] = (counts[u.kind] || 0) + 1;
           const sig = c.localName + "|" + (c.getAttribute("class") || "") + "|" + Object.keys(counts).sort().map((k) => k + counts[k]).join("");
           if (!buckets.has(sig)) buckets.set(sig, []);
-          buckets.get(sig).push({ c, r, us });
+          buckets.get(sig).push({ c, r, us, loose: us.length === 1 && us[0].kind === "text" });
         }
         let known = this.groups.get(P);
         if (!known) this.groups.set(P, (known = new Map()));
@@ -1272,13 +1274,13 @@ canvas.off{pointer-events:none}
           if (!g) {
             if (found.length < 2) continue;
             const m = found[0];
-            g = { master: m.c, masterUnits: m.us, mw: m.r.width, mh: m.r.height, copies: [] };
+            g = { master: m.c, masterUnits: m.us, mw: m.r.width, mh: m.r.height, copies: [], loose: m.loose };
             known.set(sig, g);
             this.roleOf.set(m.c, "master");
             rest = found.slice(1);
           }
           for (const k of rest) {
-            if (ratio(k.r.width, g.mw) > 1.35 || ratio(k.r.height, g.mh) > 1.35) continue;
+            if (ratio(k.r.height, g.mh) >= 1.8 || (!g.loose && ratio(k.r.width, g.mw) >= 1.6)) continue;
             if (k.us.some((u) => u.state !== 0)) continue;
             this.makeDup(g, k, v, top);
           }
@@ -1416,7 +1418,6 @@ canvas.off{pointer-events:none}
         for (const i of p) e = e && e.children[i];
         return e || null;
       };
-      let same = 0;
       for (const u of k.us) {
         u.inCopy = job;
         const twin = follow(g.master, pathTo(k.c, u.el));
@@ -1424,11 +1425,14 @@ canvas.off{pointer-events:none}
         if (alike && u.kind === "text") alike = twin.textContent.trim() === u.el.textContent.trim();
         else if (alike && u.kind === "media" && u.el.localName === "img") alike = (twin.currentSrc || twin.src) === (u.el.currentSrc || u.el.src);
         else if (alike && u.kind === "media" && u.el.localName === "svg") alike = twin.innerHTML.length === u.el.innerHTML.length;
+        else if (alike && u.kind === "box") {
+          const a = getComputedStyle(twin);
+          const b = getComputedStyle(u.el);
+          alike = sameColor(a.backgroundColor, b.backgroundColor) && sameColor(a.borderTopColor, b.borderTopColor) && a.backgroundImage === b.backgroundImage;
+        }
         u.dupSame = alike;
-        if (alike) same++;
+        u.twinPath = pathTo(k.c, u.el);
       }
-      // nothing in common to carry over: the copy simply arrives with its own content
-      if (!same) for (const u of k.us) u.dupSame = true;
       g.copies.push(job);
       this.waiting.push(job);
     }
@@ -1504,8 +1508,12 @@ canvas.off{pointer-events:none}
         u.st = 0;
       } else if (u.step === 3) {
         if (this.arrived(u, "carry", dt)) {
-          if (u.ghost) this.dropGhost(u.ghost);
-          u.ghost = null;
+          const edits = u.units.filter((x) => !x.dupSame && x.kind === "text");
+          if (u.ghost && edits.length) this.holdGhost(u, edits);
+          else {
+            if (u.ghost) this.dropGhost(u.ghost);
+            u.ghost = null;
+          }
           for (const x of u.units) if (x.dupSame) this.complete(x, true);
           u.done = true; // now the differences can be edited in
           this.sound(u, "dup");
@@ -1518,6 +1526,38 @@ canvas.off{pointer-events:none}
       } else if (u.step === 5 && u.st >= 0.35) {
         u.state = 2;
         this.release(u);
+      }
+    }
+
+    // keep only the original's words of the copy on screen (over the real copy, whose own
+    // words are still hidden); each is selected and retyped in turn
+    holdGhost(u, edits) {
+      const gh = u.ghost;
+      const D = u.el.getBoundingClientRect();
+      this.moveGhost(gh, D.left, D.top);
+      gh.el.style.setProperty("box-shadow", "none", "important");
+      for (const e of [gh.el, ...gh.el.querySelectorAll("*")]) e.removeAttribute(SHOWN);
+      for (const x of edits) {
+        let t = gh.el;
+        for (const i of x.twinPath || []) t = t && t.children[i];
+        if (!t) continue;
+        for (const e of [t, ...t.querySelectorAll("*")]) e.setAttribute(SHOWN, "");
+        x.ghostTwin = t;
+      }
+      (this.held || (this.held = new Set())).add(u);
+    }
+
+    // the old words go as the new ones are typed
+    dropTwin(x) {
+      const t = x.ghostTwin;
+      if (!t) return;
+      for (const e of [t, ...t.querySelectorAll("*")]) e.removeAttribute(SHOWN);
+      x.ghostTwin = null;
+      const job = x.inCopy;
+      if (job && job.ghost && job.units.every((y) => y.dupSame || !y.ghostTwin)) {
+        this.dropGhost(job.ghost);
+        job.ghost = null;
+        if (this.held) this.held.delete(job);
       }
     }
 
@@ -1607,6 +1647,7 @@ canvas.off{pointer-events:none}
         return;
       }
       if (u.shx || u.shy) this.setShift(u, 0, 0);
+      if (u.ghostTwin) this.dropTwin(u);
       if (u.scaleWas) this.unscaleText(u);
       this.release(u);
       u.state = 2;
@@ -1734,7 +1775,7 @@ canvas.off{pointer-events:none}
       const slots = Math.min(this.nibs.length, 8 + Math.floor(avail / 2) + Math.floor(this.speedPx / 40));
       let busy = 0;
       for (const u of this.active) if (!(u.kind === "box" && u.phase >= 1)) busy++;
-      this.idleT = this.active.length ? 0 : (this.idleT || 0) + dt;
+      let started = 0;
       if (resting && this.waiting.length) {
         const keep = [];
         for (const u of this.waiting) {
@@ -1745,16 +1786,17 @@ canvas.off{pointer-events:none}
           }
           let go = busy < slots && (u.fixed || u.y <= this.frontier) && this.parentReady(u) && (!u.inCopy || u.inCopy.done);
           if (go && u.snap && u.snap.job.state !== 2 && (u.snapWait = (u.snapWait || 0) + dt) < 1.6) go = false;
-          // one copy at a time per group: each is duplicated from the nearest finished one
-          if (go && u.kind === "dup" && u.group.copies.some((c) => c !== u && c.state === 1)) go = false;
+          // up to three copies of a group at once, each from the nearest finished one
+          if (go && u.kind === "dup" && u.group.copies.filter((c) => c !== u && c.state === 1).length >= 3) go = false;
           if (go && u.kind === "dup") {
             const src = this.dupSource(u);
             // the original can't finish yet (part of it is still off screen) and nothing else
             // is happening: don't wait for it, build this copy by hand
-            const stuck = src === undefined && this.idleT > 0.4;
+            const stuck = src === undefined && (this.idleT || 0) > 0.6;
             if (src === undefined && !stuck) go = false;
             else if (stuck || src === null || !this.inView(u, v, top, 0)) {
               // nothing on screen to copy from: build this one by hand instead
+              u.why = stuck ? "stuck" : src === null ? "no-source" : "off-screen";
               u.done = true;
               u.state = 2;
               for (const x of u.units) x.dupSame = false;
@@ -1784,8 +1826,12 @@ canvas.off{pointer-events:none}
             if (u.snap.axis === "x") this.setShift(u, rand(28, 64), rand(-8, 8));
             else this.setShift(u, rand(-8, 8), rand(18, 34) * (Math.random() < 0.5 ? -1 : 1));
           }
+          if (u.kind !== "text" && u.kind !== "dup" && u.kind !== "guide") {
+            u.swap = !!u.inCopy && !!u.inCopy.src && !u.dupSame && !u.line;
+            u.jx = rand(-6, 6);
+          }
           if (u.kind === "text") {
-            u.edit = !!u.inCopy && !u.dupSame;
+            u.edit = !!u.inCopy && !!u.inCopy.src && !u.dupSame; // only a real copy is edited
             u.jx = rand(-5, 5);
             u.grow = !u.edit && u.mode !== "fade" && u.fs >= 28 && u.h < 400;
           }
@@ -1797,9 +1843,12 @@ canvas.off{pointer-events:none}
           this.active.push(u);
           if (u.kind !== "text" || u.fs >= 26) this.focus = u;
           busy++;
+          started++;
         }
         this.waiting = keep;
       }
+      // truly idle: the page is still, nothing is being built and nothing could start
+      this.idleT = this.active.length || started || !resting ? 0 : (this.idleT || 0) + dt;
 
       // each piece is made by its cursor, step by step, at the swarm's tempo
       const T = dt * this.tempo;
@@ -1904,8 +1953,11 @@ canvas.off{pointer-events:none}
       if (u.step === 0) {
         if (this.arrived(u, "to", dt)) {
           this.press(u);
-          u.step = 2;
           u.st = 0;
+          if (u.swap) {
+            u.step = 3;
+            u.hold = rand(0.1, 0.18);
+          } else u.step = 2;
         }
       } else if (u.step === 2) {
         if (this.arrived(u, "drag", dt)) {
@@ -1940,7 +1992,7 @@ canvas.off{pointer-events:none}
             for (const k of u.el.querySelectorAll("*")) st.show(k);
             this.scanIn(u);
           }
-          this.sound(u, u.kind === "box" ? "rect" : "image");
+          this.sound(u, u.swap ? "restyle" : u.kind === "box" ? "rect" : "image");
           u.step = 4;
           u.st = 0;
         }
@@ -2079,6 +2131,7 @@ canvas.off{pointer-events:none}
     beginTyping(u) {
       const st = this.stage;
       const n = u.lead;
+      this.dropTwin(u);
       u.phase = 1;
       u.step = 3;
       u.budget = 0;
@@ -2441,6 +2494,10 @@ canvas.off{pointer-events:none}
         if (u.step <= 1) return { key: "to", p: a, shape: "pen-add" };
         if (u.step <= 3) return { key: "to-end", p: b, shape: "pen", o: { bend: u.bend } };
         return { key: "away", p: [b[0] + u.off[0], b[1] + u.off[1]], shape: u.step === 4 ? "pen" : "arrow", o: { speed: 1.4 } };
+      }
+      if ((u.kind === "box" || u.kind === "media" || u.kind === "control") && u.swap) {
+        const p = cl(R.x + Math.min(R.w * 0.5, 60) + u.jx, R.y + Math.min(R.h * 0.5, 30));
+        return { key: "to", p, shape: "arrow" };
       }
       if (u.kind === "box" || u.kind === "media" || u.kind === "control") {
         if (u.step === 0) return { key: "to", p: cl(R.x, R.y), shape: "cross" };
@@ -2829,6 +2886,13 @@ canvas.off{pointer-events:none}
         if (R) rects.set(u, R);
       }
       this.stepSwarm(rects); // pointers first, so a shape being dragged sits exactly under its pointer
+      if (this.held) {
+        for (const j of this.held) {
+          if (!j.ghost) continue;
+          const D = j.el.getBoundingClientRect();
+          this.moveGhost(j.ghost, D.left, D.top);
+        }
+      }
       for (const u of this.active) {
         if (u.state !== 1) continue;
         if (u.kind === "dup" && u.step === 3) this.dragCopy(u);
@@ -3083,6 +3147,10 @@ canvas.off{pointer-events:none}
         g.restore();
         return;
       }
+      if ((u.kind === "box" || u.kind === "media" || u.kind === "control") && u.swap) {
+        if (u.step >= 3) this.sel(g, x, y, w, h, INK, true, true);
+        return;
+      }
       if (u.kind === "box" || u.kind === "media" || u.kind === "control") {
         if (!u.step) return;
         let dw = w;
@@ -3115,6 +3183,14 @@ canvas.off{pointer-events:none}
       if (u.kind === "text") {
         if (!u.step) return;
         const tb = this.textBox(u, R);
+        if (u.step === 11) {
+          g.save();
+          g.fillStyle = rgba(INK, 0.28);
+          g.fillRect(tb.x - 1, tb.y, tb.w + 2, tb.h);
+          g.restore();
+          this.sel(g, tb.x - 2, tb.y - 2, tb.w + 4, tb.h + 4, INK, false, false);
+          return;
+        }
         if (u.step === 2) {
           const n = u.lead;
           const gw = n && n.unit === u ? Math.max(0, n.x - tb.x) : 0;

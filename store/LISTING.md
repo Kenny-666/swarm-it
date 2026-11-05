@@ -31,7 +31,7 @@ Swarmline sends a swarm of cursors across the page, working the way designers do
 • Boxes, cards and sections are dragged out with a crosshair, with a live size readout and selection handles, then fill in for real
 • Dividers are drawn with the pen tool, click by click
 • Rulers slide in, red alignment guides are pulled out, and text snaps onto them
-• Cards, list rows and other repeated parts are built once, then Alt-dragged as copies into place, with the spacing measured, and only what differs is retyped
+• Cards, list rows, nav links and other repeated parts are built once, then Alt-dragged as copies with the spacing measured; each copy is then edited: the old words are selected and retyped, and a different image or colour is swapped in
 • Text boxes are dragged out and typed letter by letter; big headlines grow into size
 • Image and video frames are dragged out, then the picture scans into place
 • Buttons, icons and form fields pop in where they belong
