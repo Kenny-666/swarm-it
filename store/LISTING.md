@@ -26,13 +26,13 @@ Paste this as-is:
 ```
 One click and any website becomes a blank canvas. Then a swarm builds it back, live, right in front of you.
 
-Swarmline sends a swarm of glowing, colourful pen-nibs across the page. They work in crews, in reading order:
+Swarmline sends a swarm of pointers across the page, working the way a designer does in a design tool, in reading order:
 
-• Boxes, cards and sections are traced by the crews, with a live size readout, then fill in for real
-• Headlines and paragraphs are typed letter by letter, with a blinking caret
-• Images, video and canvases scan into place
+• Boxes, cards and sections are clicked and dragged out, with a live size readout and selection handles, then fill in for real
+• Headlines and paragraphs are typed letter by letter, with a text cursor and caret
+• Image and video frames are dragged out, then the picture scans into place
 • Buttons, icons and form fields pop in where they belong
-• When a screen is finished, the swarm rides a light sweep across it
+• When the page is finished, the swarm follows your own mouse pointer until you exit
 
 Everything appears in place on the real page, in the site's own colours and fonts. Nothing is copied or redrawn, so the finished page is exactly the live site, with its animations, video and links all working.
 

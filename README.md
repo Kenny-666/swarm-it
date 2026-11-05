@@ -4,7 +4,7 @@
 
 ![Swarmline building a page](store/marquee-1400x560.png)
 
-Swarmline is a Chrome extension. Click it on any page and the page becomes a blank canvas in its own colours. A swarm of glowing, colourful pen-nibs then builds it back in reading order: crews trace each box with a live size readout before it fills in for real, type every headline and paragraph letter by letter, and scan images into place. When a screen is done, the swarm rides a light sweep across it and Auto-tour glides straight on to the next. Between jobs the free nibs circle in two counter-rotating rings over the next section to be built.
+Swarmline is a Chrome extension. Click it on any page and the page becomes a blank canvas in its own colours. A swarm of pointers then builds it back in reading order, the way a designer works in a design tool: each pointer goes to a corner, clicks and drags the box out (with a live size readout and selection handles in one selection blue) before it fills in for real; clicks where text goes and types it letter by letter with an I-beam; and drags out image frames that the picture then scans into. Auto-tour glides straight on to the next screen. Between jobs the free pointers drift in a loose, living cloud over the next section, and when the page is done they follow your own mouse pointer until you exit.
 
 Everything appears in place on the real page, so the result is always exactly the live site: its fonts, GSAP and CSS animations, video, canvases and links keep working throughout.
 
@@ -38,7 +38,7 @@ Turn the tour off to scroll yourself: the swarm builds whatever comes to rest on
 2. **Scan.** When the page comes to rest, the visible part of the DOM (including open shadow roots) is read into *units*: boxes (anything that paints a background, border or shadow), text blocks (their real line boxes and letter positions, with split-text letters merged back into lines), media, form controls and icon-font glyphs.
 3. **Build.** Units start in reading order, each with a crew of one to four nibs from the swarm. A crew traces a box's outline with a live size badge, then the real box fades in; text is typed by clipping the real element to the letters written so far (`clip-path: path(…)`) with a caret in the crew's colour; images and canvases scan in with a clip animation while the crew rides the scan line. A child waits for the box it sits in.
 4. **Sweep.** When everything on screen is built, anything still hidden there (wrapper backgrounds, decoration) comes in top to bottom behind a light line that the idle swarm rides.
-5. **Tour and finish.** Auto-tour eases to the next screen once the page is still. At the end the stylesheet and markers are removed, the swarm disperses, and the HUD shows a summary with **Replay**.
+5. **Tour and finish.** Auto-tour eases to the next screen once the page is still. At the end the stylesheet and markers are removed, the page is fully interactive again, the swarm follows your mouse pointer, and the HUD shows a summary with **Replay**.
 
 The swarm, outlines, badges and caret are drawn on a transparent `<canvas>` in a closed shadow root above the page. Exiting at any point (or any error) removes everything Swarmline added.
 
