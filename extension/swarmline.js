@@ -23,11 +23,13 @@
 
   const SHOWN = "data-swarmline-v"; // elements the swarm has put back on the page
   const ACTIVE = "data-swarmline"; // on <html> while the page is being built
+  const GHOST = "data-swarmline-ghost"; // the look-alike carried during a duplicate (never scanned)
   const SANS = 'Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
   const MAX_UNITS = 3000;
   const CHAR_BUDGET = 9000; // exact letter positions per scan; past that they're estimated
   // toolbar placement for this tab only: kept in memory, never stored
   const prefs = { hudHidden: false, hudPos: null };
+  const MEASURE = "#F43F5E"; // spacing measurements while a copy is dragged
   const INK = "#2F6BFF"; // the one colour every drawing mark uses: a design tool's selection blue
   const PALETTE = ["#FF5A6E", "#FFB020", "#19D3A2", "#3D9BFF", "#A46BFF", "#FF7AC8", "#2FE0F0", "#FF8A3D"];
 
@@ -355,7 +357,7 @@
       const visit = (el, parent, fixed, under, inFlow) => {
         if (this.count >= MAX_UNITS) return;
         const tag = el.localName;
-        if (SKIP.has(tag) || el === this.host) return;
+        if (SKIP.has(tag) || el === this.host || el.hasAttribute(GHOST)) return;
         const s = cs(el);
         const d = s.display;
         if (d === "none") return;
@@ -468,7 +470,7 @@
         const all = document.body ? document.body.getElementsByTagName("*") : [];
         for (let i = 0; i < all.length && out.length < 4000; i++) {
           const el = all[i];
-          if (el === this.host || SKIP.has(el.localName) || this.stage.shown(el)) continue;
+          if (el === this.host || SKIP.has(el.localName) || this.stage.shown(el) || el.closest(`[${GHOST}]`)) continue;
           const r = el.getBoundingClientRect();
           if (r.bottom < vTop || r.top > vBottom) continue;
           out.push({ el, y: r.top });
@@ -762,13 +764,296 @@ canvas.off{pointer-events:none}
     // ---------------------------------------------------------------- units
 
     register(list) {
+      const fresh = list.slice();
       for (const u of list) {
         this.units.push(u);
         // already on the page (an earlier sweep put it back): nothing to build
         if (this.stage.shown(u.el)) this.complete(u, true);
         else this.waiting.push(u);
       }
+      try {
+        this.findRepeats(fresh);
+      } catch (err) {
+        console.error("[swarmline] repeats", err);
+      }
       this.waiting.sort((a, b) => (a.fixed !== b.fixed ? (a.fixed ? -1 : 1) : a.y - b.y || a.id - b.id));
+    }
+
+    // ---------------------------------------------------------------- repeats
+    // Cards in a grid, rows in a list, items in a menu: build the first one, then
+    // duplicate it into the next slot and edit only what differs.
+    findRepeats(list) {
+      if (!this.groups) {
+        this.groups = new Map(); // parent element -> Map(signature -> group)
+        this.roleOf = new WeakMap(); // component element -> "master" | job
+        this.dupCount = 0;
+      }
+      const v = this.env.view();
+      const top = this.env.top;
+      const unitsIn = new Map();
+      for (const u of list) {
+        if (u.state !== 0 || u.fixed) continue;
+        let e = u.el;
+        for (let d = 0; e && e !== document.body && d < 9; d++, e = e.parentElement) {
+          let a = unitsIn.get(e);
+          if (!a) unitsIn.set(e, (a = []));
+          a.push(u);
+        }
+      }
+      const depth = (e) => {
+        let d = 0;
+        for (; e; e = e.parentElement) d++;
+        return d;
+      };
+      const parents = [...new Set([...unitsIn.keys()].map((e) => e.parentElement).filter(Boolean))].sort((a, b) => depth(a) - depth(b));
+      const ratio = (a, b) => Math.max(a, b) / Math.max(1, Math.min(a, b));
+      const insideCopy = (e) => {
+        for (let p = e; p; p = p.parentElement) {
+          const r = this.roleOf.get(p);
+          if (r && r !== "master") return true;
+        }
+        return false;
+      };
+      for (const P of parents) {
+        if (P === document.body || P === document.documentElement || insideCopy(P)) continue;
+        const buckets = new Map();
+        for (const c of P.children) {
+          const us = unitsIn.get(c);
+          if (!us || us.length < 2 || this.roleOf.has(c)) continue;
+          const r = c.getBoundingClientRect();
+          if (r.width < 24 || r.height < 16 || r.height > v.h * 0.8 || r.width > v.w * 0.96) continue;
+          if (getComputedStyle(c).translate !== "none") continue;
+          const counts = {};
+          for (const u of us) counts[u.kind] = (counts[u.kind] || 0) + 1;
+          const sig = c.localName + "|" + (c.getAttribute("class") || "") + "|" + Object.keys(counts).sort().map((k) => k + counts[k]).join("");
+          if (!buckets.has(sig)) buckets.set(sig, []);
+          buckets.get(sig).push({ c, r, us });
+        }
+        let known = this.groups.get(P);
+        if (!known) this.groups.set(P, (known = new Map()));
+        for (const [sig, found] of buckets) {
+          found.sort((a, b) => a.r.top - b.r.top || a.r.left - b.r.left);
+          let g = known.get(sig);
+          let rest = found;
+          if (!g) {
+            if (found.length < 2) continue;
+            const m = found[0];
+            g = { master: m.c, masterUnits: m.us, mw: m.r.width, mh: m.r.height, copies: [] };
+            known.set(sig, g);
+            this.roleOf.set(m.c, "master");
+            rest = found.slice(1);
+          }
+          for (const k of rest) {
+            if (ratio(k.r.width, g.mw) > 1.35 || ratio(k.r.height, g.mh) > 1.35) continue;
+            if (k.us.some((u) => u.state !== 0)) continue;
+            this.makeDup(g, k, v, top);
+          }
+        }
+      }
+    }
+
+    makeDup(g, k, v, top) {
+      const job = {
+        id: -(++this.dupCount), kind: "dup", el: k.c, group: g, parent: null, fixed: false,
+        state: 0, phase: 0, p: 0, typed: 0, step: 0, st: 0, done: false,
+        y: k.r.top - v.y + top, w: k.r.width, h: k.r.height, top0: k.r.top, left0: k.r.left,
+        rad: [0, 0, 0, 0], label: "", lead: null, units: k.us,
+      };
+      this.roleOf.set(k.c, job);
+      // what the copy shares with the original comes along with it; what differs is edited after
+      const pathTo = (root, el) => {
+        const p = [];
+        for (let e = el; e && e !== root; e = e.parentElement) p.unshift([...e.parentElement.children].indexOf(e));
+        return p;
+      };
+      const follow = (root, p) => {
+        let e = root;
+        for (const i of p) e = e && e.children[i];
+        return e || null;
+      };
+      let same = 0;
+      for (const u of k.us) {
+        u.inCopy = job;
+        const twin = follow(g.master, pathTo(k.c, u.el));
+        let alike = !!twin && twin.localName === u.el.localName;
+        if (alike && u.kind === "text") alike = twin.textContent.trim() === u.el.textContent.trim();
+        else if (alike && u.kind === "media" && u.el.localName === "img") alike = (twin.currentSrc || twin.src) === (u.el.currentSrc || u.el.src);
+        else if (alike && u.kind === "media" && u.el.localName === "svg") alike = twin.innerHTML.length === u.el.innerHTML.length;
+        u.dupSame = alike;
+        if (alike) same++;
+      }
+      // nothing in common to carry over: the copy simply arrives with its own content
+      if (!same) for (const u of k.us) u.dupSame = true;
+      g.copies.push(job);
+      this.waiting.push(job);
+    }
+
+    // the duplicate can start once something to copy from is finished and on screen
+    dupSource(job) {
+      const g = job.group;
+      const ready = [];
+      if (g.masterUnits.every((u) => u.state === 2)) ready.push(g.master);
+      for (const c of g.copies) if (c.done && c.state === 2 && c.units.every((x) => x.state === 2)) ready.push(c.el);
+      if (!ready.length) return undefined; // not yet
+      const D = job.el.getBoundingClientRect();
+      let best = null;
+      let bd = Infinity;
+      for (const e of ready) {
+        const r = e.getBoundingClientRect();
+        if (r.bottom < 0 || r.top > innerHeight || r.right < 0 || r.left > innerWidth) continue;
+        const d = Math.hypot(r.left - D.left, r.top - D.top);
+        if (d < bd) {
+          bd = d;
+          best = e;
+        }
+      }
+      return best; // null: nothing visible to copy from
+    }
+
+    shiftEl(el, x, y) {
+      if (!this.shifted) this.shifted = new Map();
+      if (!this.shifted.has(el)) this.shifted.set(el, [el.style.getPropertyValue("translate"), el.style.getPropertyPriority("translate")]);
+      el.style.setProperty("translate", `${x.toFixed(1)}px ${y.toFixed(1)}px`, "important");
+    }
+
+    unshift(el) {
+      const prev = this.shifted && this.shifted.get(el);
+      if (!prev) return;
+      if (prev[0]) el.style.setProperty("translate", prev[0], prev[1]);
+      else el.style.removeProperty("translate");
+      this.shifted.delete(el);
+    }
+
+    unshiftAll() {
+      if (this.shifted) for (const el of [...this.shifted.keys()]) this.unshift(el);
+      if (this.ghosts) for (const gh of [...this.ghosts]) this.dropGhost(gh);
+    }
+
+    // the duplicate, step by step: select the original, hold Alt, drag the copy out, let go
+    stepDup(u, sdt, isReady) {
+      const n = u.lead;
+      if (u.step === 0) {
+        if (!isReady) return;
+        u.step = 1;
+        u.st = 0;
+        this.pulse(n);
+        return;
+      }
+      u.st += sdt;
+      if (u.step === 1 && u.st >= 0.24) {
+        u.step = 2; // Alt down: the pointer shows it will copy
+        u.st = 0;
+        if (n) n.alt = true;
+      } else if (u.step === 2 && u.st >= 0.14) {
+        const S = u.src.getBoundingClientRect();
+        const D = u.el.getBoundingClientRect();
+        u.sx = S.left;
+        u.sy = S.top;
+        u.dx = D.left;
+        u.dy = D.top;
+        u.g0 = n ? [n.x, n.y] : [S.left + 20, S.top + 20];
+        u.dist = Math.hypot(D.left - S.left, D.top - S.top);
+        // the copy looks exactly like the original while it's carried; the real element
+        // takes its place on release and anything that differs is then typed in
+        u.ghost = this.makeGhost(u.src, S);
+        if (!u.ghost) {
+          for (const x of u.units) if (x.dupSame) this.reveal(x);
+          this.shiftEl(u.el, u.sx - u.dx, u.sy - u.dy);
+        }
+        if (n) n.press = 0.18;
+        u.step = 3;
+        u.st = 0;
+        u.p = 0;
+      } else if (u.step === 3) {
+        if (!u.dragDur) u.dragDur = (0.3 + Math.sqrt(u.dist) * 0.02) * (0.9 + 0.2 * Math.random());
+        u.p = clamp(u.st / u.dragDur, 0, 1);
+        if (u.p >= 1) {
+          // let go: it lands in its slot
+          if (u.ghost) this.dropGhost(u.ghost);
+          else this.unshift(u.el);
+          u.ghost = null;
+          for (const x of u.units) if (x.dupSame) this.complete(x, true);
+          u.done = true; // now the differences can be edited in
+          if (n) n.alt = false;
+          u.step = 4;
+          u.st = 0;
+        }
+      } else if (u.step === 4 && u.st >= 0.32) {
+        u.state = 2;
+        this.release(u);
+      }
+    }
+
+    // the copy rides under the pointer (called after the pointers move, so it never lags)
+    dragCopy(u) {
+      const n = u.lead;
+      const e = minJerk(clamp(u.p, 0, 1));
+      const px = n && n.unit === u ? n.x : u.g0[0] + (u.dx - u.sx) * e;
+      const py = n && n.unit === u ? n.y : u.g0[1] + (u.dy - u.sy) * e;
+      if (u.ghost) this.moveGhost(u.ghost, u.sx + (px - u.g0[0]), u.sy + (py - u.g0[1]));
+      else this.shiftEl(u.el, u.sx - u.dx + (px - u.g0[0]), u.sy - u.dy + (py - u.g0[1]));
+    }
+
+    // a look-alike of an element, as it looks right now, laid over the page
+    makeGhost(src, S) {
+      try {
+        const el = src.cloneNode(true);
+        el.setAttribute(GHOST, "");
+        el.setAttribute(SHOWN, "");
+        el.setAttribute("aria-hidden", "true");
+        el.removeAttribute("id");
+        for (const k of el.querySelectorAll("[id],[name],[autofocus]")) {
+          k.removeAttribute("id");
+          k.removeAttribute("name");
+          k.removeAttribute("autofocus");
+        }
+        for (const v of el.querySelectorAll("video,audio")) {
+          v.removeAttribute("autoplay");
+          v.muted = true;
+        }
+        const set = (p, val) => el.style.setProperty(p, val, "important");
+        set("position", "fixed");
+        set("left", "0px");
+        set("top", "0px");
+        set("margin", "0");
+        set("width", S.width + "px");
+        set("height", S.height + "px");
+        set("box-sizing", "border-box");
+        set("translate", "none");
+        set("transform", "none");
+        set("transition", "none");
+        set("animation", "none");
+        set("pointer-events", "none");
+        set("z-index", "2147483000");
+        set("box-shadow", "0 12px 32px rgba(15,23,42,.18)");
+        src.parentNode.insertBefore(el, src.nextSibling);
+        // a transformed ancestor can move "fixed": measure and correct for it
+        const r = el.getBoundingClientRect();
+        const gh = { el, ox: -r.left, oy: -r.top };
+        this.moveGhost(gh, S.left, S.top);
+        (this.ghosts || (this.ghosts = new Set())).add(gh);
+        return gh;
+      } catch (_) {
+        return null;
+      }
+    }
+
+    moveGhost(gh, x, y) {
+      gh.el.style.setProperty("left", (x + gh.ox).toFixed(1) + "px", "important");
+      gh.el.style.setProperty("top", (y + gh.oy).toFixed(1) + "px", "important");
+    }
+
+    dropGhost(gh) {
+      gh.el.remove();
+      if (this.ghosts) this.ghosts.delete(gh);
+    }
+
+    // show a unit's element(s) as they are (a copy carries them along)
+    reveal(x) {
+      const st = this.stage;
+      st.show(x.el);
+      if (x.kind === "text") for (const f of x.flow) st.show(f);
+      else if (x.kind === "media" || x.kind === "control") for (const k of x.el.querySelectorAll("*")) st.show(k);
     }
 
     complete(u, silent) {
@@ -888,15 +1173,32 @@ canvas.off{pointer-events:none}
       const slots = 8 + this.speed * 3;
       let busy = 0;
       for (const u of this.active) if (!(u.kind === "box" && u.phase >= 1)) busy++;
+      this.idleT = this.active.length ? 0 : (this.idleT || 0) + dt;
       if (resting && this.waiting.length) {
         const keep = [];
         for (const u of this.waiting) {
           if (u.state !== 0) continue;
-          if (st.shown(u.el)) {
+          if (u.kind !== "dup" && st.shown(u.el)) {
             this.complete(u, true);
             continue;
           }
-          const go = busy < slots && (u.fixed || u.y <= this.frontier) && this.parentReady(u);
+          let go = busy < slots && (u.fixed || u.y <= this.frontier) && this.parentReady(u) && (!u.inCopy || u.inCopy.done);
+          // one copy at a time per group: each is duplicated from the nearest finished one
+          if (go && u.kind === "dup" && u.group.copies.some((c) => c !== u && c.state === 1)) go = false;
+          if (go && u.kind === "dup") {
+            const src = this.dupSource(u);
+            // the original can't finish yet (part of it is still off screen) and nothing else
+            // is happening: don't wait for it, build this copy by hand
+            const stuck = src === undefined && this.idleT > 0.4;
+            if (src === undefined && !stuck) go = false;
+            else if (stuck || src === null || !this.inView(u, v, top, 0)) {
+              // nothing on screen to copy from: build this one by hand instead
+              u.done = true;
+              u.state = 2;
+              for (const x of u.units) x.dupSame = false;
+              continue;
+            } else u.src = src;
+          }
           if (!go) {
             keep.push(u);
             continue;
@@ -920,6 +1222,10 @@ canvas.off{pointer-events:none}
       const ready = (u) => !u.lead || (u.lead.attached && u.lead.near) || (u.waitT = (u.waitT || 0) + sdt) > 1.8;
       for (const u of this.active) {
         if (u.state !== 1) continue;
+        if (u.kind === "dup") {
+          this.stepDup(u, sdt, ready(u));
+          continue;
+        }
         if (u.kind === "box") {
           if (u.phase === 0) {
             if (this.gesture(u, sdt, ready(u), true)) {
@@ -1129,6 +1435,7 @@ canvas.off{pointer-events:none}
       this.jump = null;
       this.outro = { t: 0, at: performance.now() };
       this.cv.classList.add("off"); // the page is live: clicks go straight through
+      this.unshiftAll();
       this.secs = (this.outro.at - this.startedAt) / 1000;
       // the rest of the page comes back at once, gently
       const leftover = [];
@@ -1174,16 +1481,39 @@ canvas.off{pointer-events:none}
     nextSpot(rects, v) {
       const top = this.env.top;
       for (const u of this.waiting) {
-        if (u.state !== 0 || u.fixed) continue;
+        if (u.state !== 0 || u.fixed || u.kind === "dup" || u.inCopy) continue; // keep clear of copies about to be dragged in
         const y = u.y - top + v.y;
         if (y > v.y + v.h) break; // sorted by y: nothing further is on screen
         if (y + u.h < v.y) continue;
         return [u.left0 + Math.min(u.w, 520) / 2, y + Math.min(u.h, 220) / 2];
       }
-      const fr = this.focus && rects.get(this.focus);
-      if (fr) return [fr.x + fr.w / 2, fr.y + Math.min(fr.h, 160) / 2];
-      // screen done: drift low, the way the tour is about to go
-      return [v.x + v.w / 2, v.y + v.h * (this.tour ? 0.6 : 0.46)];
+      // nothing new to hover over: wait in the open, out of the way of the work in progress
+      const busy = [];
+      for (const [u, R] of rects) {
+        if (u.state !== 1) continue;
+        busy.push([R.x + R.w / 2, R.y + R.h / 2]);
+        if (u.kind === "dup" && u.src) {
+          const S = u.src.getBoundingClientRect();
+          busy.push([S.left + S.width / 2, S.top + S.height / 2]);
+        }
+      }
+      if (!busy.length) return [v.x + v.w / 2, v.y + v.h * (this.tour ? 0.6 : 0.46)];
+      let best = null;
+      let bd = -1;
+      for (const fx of [0.22, 0.5, 0.78]) {
+        for (const fy of [0.3, 0.62]) {
+          const p = [v.x + v.w * fx, v.y + v.h * fy];
+          let d = Infinity;
+          for (const b of busy) d = Math.min(d, Math.hypot(b[0] - p[0], b[1] - p[1]));
+          // a little loyalty to where it already is, so it doesn't hop about
+          if (this.anchor) d += 60 - Math.min(60, Math.hypot(this.anchor[0] - p[0], this.anchor[1] - p[1]) / 6);
+          if (d > bd) {
+            bd = d;
+            best = p;
+          }
+        }
+      }
+      return best;
     }
 
     // free flight: a loose swarm around a centre, with real momentum. Each pointer keeps
@@ -1274,6 +1604,7 @@ canvas.off{pointer-events:none}
         if (n.unit !== u) continue;
         n.unit = null;
         n.attached = false;
+        n.alt = false;
       }
       u.lead = null;
     }
@@ -1291,6 +1622,15 @@ canvas.off{pointer-events:none}
     }
 
     workPoint(n, u, R) {
+      if (u.kind === "dup") {
+        if (u.step >= 3 && u.g0) {
+          const e = u.step === 3 ? minJerk(clamp(u.p, 0, 1)) : 1;
+          return [u.g0[0] + (u.dx - u.sx) * e, u.g0[1] + (u.dy - u.sy) * e];
+        }
+        // grab the original near its top-left, like picking up a card
+        const S = u.src.getBoundingClientRect();
+        return [S.left + Math.min(S.width * 0.4, 64), S.top + Math.min(S.height * 0.35, 26)];
+      }
       // hands stay on screen even when an element runs past the edges
       const x0 = clamp(R.x, 4, this.W - 4);
       const y0 = clamp(R.y, 4, this.H - 4);
@@ -1472,6 +1812,20 @@ canvas.off{pointer-events:none}
         g.lineWidth = 1.5 / k;
         g.strokeStyle = "#fff";
         g.stroke(P);
+        if (n.alt) {
+          g.beginPath();
+          g.arc(15.5, 19.5, 5, 0, TAU);
+          g.fillStyle = n.color;
+          g.fill();
+          g.stroke();
+          g.beginPath();
+          g.moveTo(13, 19.5);
+          g.lineTo(18, 19.5);
+          g.moveTo(15.5, 17);
+          g.lineTo(15.5, 22);
+          g.lineWidth = 1.6 / k;
+          g.stroke();
+        }
         g.restore();
       }
       g.globalAlpha = 1;
@@ -1539,6 +1893,7 @@ canvas.off{pointer-events:none}
         if (R) rects.set(u, R);
       }
       this.stepSwarm(rects); // pointers first, so a shape being dragged sits exactly under its pointer
+      for (const u of this.active) if (u.kind === "dup" && u.step === 3 && u.state === 1) this.dragCopy(u);
       for (const u of this.active) {
         const R = rects.get(u);
         if (R) this.mark(g, u, R);
@@ -1589,6 +1944,33 @@ canvas.off{pointer-events:none}
       const { x, y, w, h } = R;
       g.lineWidth = 1.5;
       g.strokeStyle = INK;
+      if (u.kind === "dup") {
+        if (!u.src || !u.step) return;
+        const S = u.src.getBoundingClientRect();
+        const q = (u.step === 3 && u.ghost ? u.ghost.el : u.el).getBoundingClientRect(); // fresh: the copy moved this frame
+        const C = { x: q.left, y: q.top, w: q.width, h: q.height };
+        if (u.step <= 2) {
+          // the original, selected
+          g.strokeRect(Math.round(S.left) + 0.5, Math.round(S.top) + 0.5, Math.round(S.width), Math.round(S.height));
+          this.handles(g, S.left, S.top, S.width, S.height);
+          this.sizeBadge(g, S.left, S.top, S.width, S.height, 1);
+          return;
+        }
+        if (u.step === 3) {
+          g.globalAlpha = 0.6;
+          g.setLineDash([4, 3]);
+          g.strokeRect(Math.round(S.left) + 0.5, Math.round(S.top) + 0.5, Math.round(S.width), Math.round(S.height));
+          g.setLineDash([]);
+          g.globalAlpha = 1;
+          g.strokeRect(Math.round(C.x) + 0.5, Math.round(C.y) + 0.5, Math.round(C.w), Math.round(C.h));
+          this.measure(g, { x: S.left, y: S.top, w: S.width, h: S.height }, C);
+          return;
+        }
+        g.strokeRect(Math.round(C.x) + 0.5, Math.round(C.y) + 0.5, Math.round(C.w), Math.round(C.h));
+        this.handles(g, C.x, C.y, C.w, C.h);
+        this.sizeBadge(g, C.x, C.y, C.w, C.h, 1);
+        return;
+      }
       if (u.kind === "box" || u.kind === "media" || u.kind === "control") {
         if (u.phase === 0) {
           if (!u.step || u.step === 1) return;
@@ -1674,6 +2056,57 @@ canvas.off{pointer-events:none}
         g.stroke();
         g.globalAlpha = 1;
       }
+    }
+
+    // the gap between two shapes, the way a design tool shows it while you drag
+    measure(g, a, b) {
+      const oy = Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y);
+      const ox = Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x);
+      let p0;
+      let p1;
+      if (oy > 4) {
+        const yy = Math.max(a.y, b.y) + oy / 2;
+        const [l, r] = a.x < b.x ? [a, b] : [b, a];
+        if (r.x - (l.x + l.w) < 2) return;
+        p0 = [l.x + l.w, yy];
+        p1 = [r.x, yy];
+      } else if (ox > 4) {
+        const xx = Math.max(a.x, b.x) + ox / 2;
+        const [t, d] = a.y < b.y ? [a, b] : [b, a];
+        if (d.y - (t.y + t.h) < 2) return;
+        p0 = [xx, t.y + t.h];
+        p1 = [xx, d.y];
+      } else return;
+      const gap = Math.round(Math.hypot(p1[0] - p0[0], p1[1] - p0[1]));
+      g.save();
+      g.strokeStyle = MEASURE;
+      g.lineWidth = 1;
+      g.beginPath();
+      g.moveTo(p0[0], p0[1]);
+      g.lineTo(p1[0], p1[1]);
+      const vert = p0[0] === p1[0];
+      for (const p of [p0, p1]) {
+        if (vert) {
+          g.moveTo(p[0] - 4, p[1]);
+          g.lineTo(p[0] + 4, p[1]);
+        } else {
+          g.moveTo(p[0], p[1] - 4);
+          g.lineTo(p[0], p[1] + 4);
+        }
+      }
+      g.stroke();
+      const label = String(gap);
+      g.font = `600 10.5px ${SANS}`;
+      const tw = g.measureText(label).width;
+      const mx = (p0[0] + p1[0]) / 2;
+      const my = (p0[1] + p1[1]) / 2;
+      g.fillStyle = MEASURE;
+      this.roundPath(g, Math.round(mx - tw / 2 - 5), Math.round(my - 8), tw + 10, 16, [3, 3, 3, 3]);
+      g.fill();
+      g.fillStyle = "#fff";
+      g.textBaseline = "middle";
+      g.fillText(label, Math.round(mx - tw / 2), Math.round(my));
+      g.restore();
     }
 
     // an image placeholder's diagonals
@@ -1775,6 +2208,7 @@ canvas.off{pointer-events:none}
       this.dead = true;
       cancelAnimationFrame(this.raf);
       for (const u of this.unbinds || []) u();
+      this.unshiftAll();
       this.stage.restore(); // the page is always fully back
       const host = this.host;
       host.style.setProperty("transition", `opacity ${quick ? 0.15 : 0.3}s ease`, "important");

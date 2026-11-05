@@ -29,6 +29,7 @@ One click and any website becomes a blank canvas. Then a swarm builds it back, l
 Swarmline sends a swarm of pointers across the page, working the way a designer does in a design tool, in reading order:
 
 • Boxes, cards and sections are clicked and dragged out, with a live size readout and selection handles, then fill in for real
+• Cards, list rows and other repeated parts are built once, then Alt-dragged as copies into place, with the spacing measured, and only what differs is retyped
 • Headlines and paragraphs are typed letter by letter, with a text cursor and caret
 • Image and video frames are dragged out, then the picture scans into place
 • Buttons, icons and form fields pop in where they belong
