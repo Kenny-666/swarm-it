@@ -63,7 +63,7 @@ try {
   // follow it: frames, motion and throughput
   const t0 = Date.now();
   let shot = 1;
-  const shotsAt = [700, 1600, 2600, 4200, 6500, 9500];
+  const shotsAt = (process.env.SHOTS || "700,1600,2600,4200,6500,9500").split(",").map(Number);
   const fps = [];
   const fpsDuring = [];
   const marks = [];
@@ -115,7 +115,7 @@ try {
     fpsWhileDrafting: fpsDuring,
     fpsAfter: fps[0],
     overlayGone: await page.evaluate(() => {
-      const h = document.querySelector("swarmline-sheet");
+      const h = document.querySelector("swarmline-layer");
       return !h || getComputedStyle(h).pointerEvents === "none";
     }),
   };

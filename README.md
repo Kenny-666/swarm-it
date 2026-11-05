@@ -1,54 +1,56 @@
 # Swarmline
 
-**Watch a swarm draw any web page as a blueprint.**
+**Watch a swarm build any website, live, in your browser.**
 
-![Swarmline drawing a page](store/marquee-1400x560.png)
+![Swarmline building a page](store/marquee-1400x560.png)
 
-Swarmline is a Chrome extension. Click it on any page and a blueprint sheet with a drafting grid and rulers covers the page. A swarm of glowing pen-nibs then drafts the elements in reading order: they trace each box with corner marks and size labels, write text in line by line, and scan images in over wireframe placeholders. As each sheet finishes it sweeps open onto the real page underneath. With Auto-tour on, Swarmline glides down the page sheet by sheet until the blueprint lifts away.
+Swarmline is a Chrome extension. Click it on any page and the page becomes a blank canvas in its own colours. A swarm of glowing, colourful pen-nibs then builds it back in reading order: crews trace each box with a live size readout before it fills in for real, type every headline and paragraph letter by letter, and scan images into place. When a screen is done, the swarm rides a light sweep across it and Auto-tour glides on to the next.
 
-Because it reveals the real page rather than rebuilding a copy, the result is always exactly the live site: fonts, scroll effects, GSAP and CSS animations, video, canvases and links keep working throughout.
+Everything appears in place on the real page, so the result is always exactly the live site: its fonts, GSAP and CSS animations, video, canvases and links keep working throughout.
+
+**Website:** https://tauquirshayaan.github.io/swarmline/ · **Privacy:** [PRIVACY.md](PRIVACY.md) · **License:** [MIT](LICENSE)
 
 ## Install (development)
 
 1. Open `chrome://extensions` and turn on **Developer mode**.
-2. Click **Load unpacked** and choose the [`extension/`](extension) folder.
+2. Click **Load unpacked** and choose the [`extension/`](extension) folder (the one with `manifest.json`; not `dist/`).
 3. Pin Swarmline from the puzzle-piece menu.
 
 ## Use
 
 | | |
 | --- | --- |
-| **Alt+Shift+L** or the toolbar button | Start (again to exit) |
-| **Auto-tour** / **T** | Glide through the page sheet by sheet |
-| **1× / 2× / 3×** | Drafting speed |
-| **Finish** / **F** | Lift the blueprint now |
-| **Esc** / **✕** | Exit |
+| **Alt+Shift+L** or the toolbar button | Start (again to stop) |
+| **Auto-tour** / **T** | Glide through the page screen by screen |
+| **1× / 2× / 3×** | Build speed |
+| **Finish** / **F** | Show the finished page now |
+| **Esc** / **✕** | Exit (the page is restored exactly) |
 
-You can also scroll yourself: Swarmline drafts whatever comes to rest on screen. With *prefers-reduced-motion* it drafts at 3× and the tour jumps instead of gliding.
+You can also scroll yourself: the swarm builds whatever comes to rest on screen. With *prefers-reduced-motion* it builds at 3× with a smaller swarm, and the tour jumps instead of gliding.
 
 ## How it works
 
 [`swarmline.js`](extension/swarmline.js) is one dependency-free content script:
 
-1. **Sheet.** A full-screen `<canvas>` inside a closed shadow root covers the page: sheet colour, a 10/50 px drafting grid that scrolls with the page, and rulers.
-2. **Scan.** When the page comes to rest, the visible part of the DOM (including open shadow roots) is turned into *units*: boxes (anything that paints a background, border or shadow), text blocks (their actual line boxes, with split-text letters merged back into lines), media, form controls and icon-font glyphs.
-3. **Draft.** Units start in reading order, a few at a time, each with a crew of one to three nibs from the swarm; work waits briefly for its nib to arrive, and the nib then rides the head of the stroke, the text cursor or the image scan line. A child waits for its parent's outline, and a box fills only after its children are done. Each unit's progress punches an opening in the sheet (`destination-out`) shaped like that element (rounded corners, the line being written, a scan line moving down an image), and outlines, labels, cursors, guides and dimensions are drawn on top.
-4. **Sweep.** When everything on screen is drafted, the rest of the screen (backgrounds, decoration, anything that isn't an element of its own) sweeps open.
-5. **Tour and finish.** Auto-tour eases to the next sheet once the page is still. At the bottom, with every sheet open, the blueprint fades away and the HUD shows a summary with **Replay**.
+1. **Blank canvas.** The page fades to its own background colour. A small stylesheet hides every element (`visibility: hidden`, so the layout never moves) except the ones the swarm has put back, which carry a marker attribute. The page keeps running underneath.
+2. **Scan.** When the page comes to rest, the visible part of the DOM (including open shadow roots) is read into *units*: boxes (anything that paints a background, border or shadow), text blocks (their real line boxes and letter positions, with split-text letters merged back into lines), media, form controls and icon-font glyphs.
+3. **Build.** Units start in reading order, each with a crew of one to four nibs from the swarm. A crew traces a box's outline with a live size badge, then the real box fades in; text is typed by clipping the real element to the letters written so far (`clip-path: path(…)`) with a caret in the crew's colour; images and canvases scan in with a clip animation while the crew rides the scan line. A child waits for the box it sits in.
+4. **Sweep.** When everything on screen is built, anything still hidden there (wrapper backgrounds, decoration) comes in top to bottom behind a light line that the idle swarm rides.
+5. **Tour and finish.** Auto-tour eases to the next screen once the page is still. At the end the stylesheet and markers are removed, the swarm disperses, and the HUD shows a summary with **Replay**.
 
-Positions are read live every frame, so sticky headers, scroll-linked animations, carousels and inner-scrolling app layouts stay lined up.
+The swarm, outlines, badges and caret are drawn on a transparent `<canvas>` in a closed shadow root above the page. Exiting at any point (or any error) removes everything Swarmline added.
 
 ## Project layout
 
 | Path | What it is |
 | --- | --- |
 | `extension/` | The extension: `manifest.json` (MV3, `activeTab` + `scripting` only), `background.js`, `swarmline.js`, `icons/` |
+| `site/` | The public website: homepage, privacy policy, support (deployed to GitHub Pages) |
+| `store/` | Store listing copy ([`LISTING.md`](store/LISTING.md)), icon, screenshots, promo tiles |
 | `demo/index.html` | Self-contained demo page (a fictional studio) used for testing and store screenshots |
-| `store/` | Store listing copy, icon, screenshots and promo tiles |
-| `scripts/make-assets.mjs` | Renders the icons, screenshots and promo tiles |
-| `scripts/package.mjs` | Builds `dist/swarmline-<version>.zip` for the Web Store |
-| `tests/smoke.mjs` | Runs Swarmline on a page with Auto-tour; frames, timings and frame rate in `tests/out/` |
-| `tests/extension.mjs` | Loads the real unpacked extension and checks start, Finish, Esc and toggle |
+| `scripts/` | `make-assets.mjs` (graphics), `package.mjs` (store zip), `preflight.mjs` (pre-submission checks), `set-email.mjs` |
+| `tests/` | `smoke.mjs` (runs it on a page with Auto-tour; frames, timings, frame rate) and `extension.mjs` (the real extension) |
+| `PUBLISHING.md` | Step-by-step: from this folder to a live Web Store listing |
 
 ## Development
 
@@ -56,23 +58,22 @@ Needs Node.js 20+ and Chrome.
 
 ```sh
 npm install
-npm run check      # syntax check
-npm run lint       # ESLint
-npm test           # smoke test on the demo page
-npm run test:site  # smoke test on a heavy real site (GSAP, Lenis, marquees)
-npm run test:ext   # real extension test
-npm run assets     # icons, screenshots, promo tiles
-npm run package    # dist/swarmline-<version>.zip
+npm run check       # syntax check
+npm run lint        # ESLint
+npm test            # smoke test on the demo page
+npm run test:site   # smoke test on a heavy real site (GSAP, Lenis, marquees)
+npm run test:ext    # real extension test
+npm run assets      # icons, screenshots, promo tiles, site images
+npm run package     # dist/swarmline-<version>.zip
+npm run preflight   # every check the store submission needs
 ```
 
 ## Publishing
 
-1. `npm run assets && npm run package`.
-2. In the [Chrome Web Store Developer Dashboard](https://chrome.google.com/webstore/devconsole), create a new item and upload `dist/swarmline-1.0.0.zip`.
-3. Fill in the listing from [`store/LISTING.md`](store/LISTING.md), upload the images in `store/`, and link a public copy of [`PRIVACY.md`](PRIVACY.md) (add your contact details to it first).
+See [PUBLISHING.md](PUBLISHING.md).
 
 ## Limits
 
 - Chrome doesn't allow extensions on `chrome://` pages, the Web Store or the PDF viewer; the button shows a × there.
-- The page can't be clicked while it's being drafted (so you can't hit a link you can't see); it's fully interactive again once the blueprint lifts.
-- Pages longer than about 3,000 elements are drafted in coarser pieces past that point (the sheet sweep still reveals everything).
+- The page can't be clicked while it's being built (so you can't hit a link you can't see); it's fully interactive again when the build finishes.
+- Past about 3,000 elements the page is built in coarser pieces (the end-of-screen sweep still brings everything back).

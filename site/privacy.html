@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Privacy policy · Swarmline</title>
+<meta name="description" content="Swarmline's privacy policy: it collects no data, makes no network requests and stores nothing.">
+<link rel="icon" href="assets/favicon-32.png" sizes="32x32">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<header class="top">
+  <div class="wrap">
+    <a class="brand" href="./"><img src="assets/icon.svg" alt="">Swarmline</a>
+    <nav class="links"><a href="./#features">Features</a><a href="./#how">How to use</a><a href="support.html">Support</a><a href="privacy.html">Privacy</a></nav>
+  </div>
+</header>
+
+<main class="wrap doc">
+  <h1>Privacy policy</h1>
+  <p class="date">Last updated: November 5, 2026 · Swarmline version 1.0.0</p>
+
+  <p>Swarmline is a Chrome extension that plays an animation of the current web page being built by a swarm. <strong>It does not collect, store, sell or share any personal data.</strong></p>
+
+  <h2>What Swarmline does with the page</h2>
+  <ul>
+    <li><strong>It only runs when you ask.</strong> Swarmline uses Chrome's <code>activeTab</code> permission, so it can access only the tab where you click its toolbar button or press its shortcut, and only at that moment. It has no access to your other tabs, your browsing history, or any site you haven't started it on.</li>
+    <li><strong>Everything happens on your device.</strong> To play the animation, Swarmline reads the layout of the page in your browser (where elements are, their sizes and colours) and temporarily hides elements, then shows them again one by one. That information is used only for the animation, stays in that tab's memory, and is discarded when the animation ends, when you exit, or when you leave the page. The page is always left exactly as it was.</li>
+    <li><strong>No network requests.</strong> Swarmline doesn't contact any server, doesn't use analytics or tracking, and doesn't load remote code.</li>
+    <li><strong>No storage.</strong> Nothing is saved to cookies, <code>localStorage</code>, <code>chrome.storage</code> or anywhere else.</li>
+    <li><strong>No accounts, no ads, no selling of data.</strong></li>
+  </ul>
+
+  <h2>Permissions</h2>
+  <table>
+    <tr><th>Permission</th><th>Why it's needed</th></tr>
+    <tr><td><code>activeTab</code></td><td>Run on the tab you started Swarmline on, and only that tab.</td></tr>
+    <tr><td><code>scripting</code></td><td>Add Swarmline's bundled animation script to that tab.</td></tr>
+  </table>
+
+  <h2>Children</h2>
+  <p>Swarmline doesn't collect information from anyone, including children.</p>
+
+  <h2>Changes</h2>
+  <p>If this policy changes, the new version will be published at this address with a new date.</p>
+
+  <h2>Contact</h2>
+  <p>Questions about privacy: <a href="mailto:{{SUPPORT_EMAIL}}">{{SUPPORT_EMAIL}}</a></p>
+</main>
+
+<footer class="bottom">
+  <div class="wrap">
+    <span>© 2026 Swarmline · MIT licensed</span>
+    <nav><a href="./">Home</a><a href="support.html">Support</a><a href="https://github.com/Tauquirshayaan/swarmline">GitHub</a></nav>
+  </div>
+</footer>
+</body>
+</html>

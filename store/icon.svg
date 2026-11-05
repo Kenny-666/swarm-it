@@ -1,15 +1,15 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
   <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#12325C"/><stop offset="1" stop-color="#081830"/></linearGradient>
-    <clipPath id="c"><rect width="128" height="128" rx="28"/></clipPath>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#20222E"/><stop offset="1" stop-color="#0C0D13"/></linearGradient>
+    <linearGradient id="t1" x1="0" y1="1" x2="1" y2="0"><stop offset="0" stop-color="#FF5A6E" stop-opacity="0"/><stop offset=".55" stop-color="#FF5A6E"/><stop offset="1" stop-color="#FFB020"/></linearGradient>
+    <linearGradient id="t2" x1="1" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#3D9BFF" stop-opacity="0"/><stop offset=".6" stop-color="#A46BFF"/><stop offset="1" stop-color="#3D9BFF"/></linearGradient>
   </defs>
-  <g clip-path="url(#c)">
-    <rect width="128" height="128" fill="url(#bg)"/>
-    <path d="M16 0V128M0 16H128" stroke="#5FD3FF" stroke-opacity=".10" stroke-width="1"/><path d="M32 0V128M0 32H128" stroke="#5FD3FF" stroke-opacity=".10" stroke-width="1"/><path d="M48 0V128M0 48H128" stroke="#5FD3FF" stroke-opacity=".10" stroke-width="1"/><path d="M64 0V128M0 64H128" stroke="#5FD3FF" stroke-opacity=".10" stroke-width="1"/><path d="M80 0V128M0 80H128" stroke="#5FD3FF" stroke-opacity=".10" stroke-width="1"/><path d="M96 0V128M0 96H128" stroke="#5FD3FF" stroke-opacity=".10" stroke-width="1"/><path d="M112 0V128M0 112H128" stroke="#5FD3FF" stroke-opacity=".10" stroke-width="1"/>
-  </g>
-  <rect x="30" y="28" width="68" height="72" rx="7" fill="none" stroke="#5FD3FF" stroke-width="6"/>
-  <path d="M30 46H98" stroke="#5FD3FF" stroke-width="5"/>
-  <path d="M42 62H78M42 76H68" stroke="#DDF5FF" stroke-width="6" stroke-linecap="round"/>
-  <path d="M22 108H106M22 102V114M106 102V114" stroke="#FFC46B" stroke-width="5" stroke-linecap="round"/>
-  <path d="M18 22H24M22 18V24M110 22H104M106 18V24" stroke="#5FD3FF" stroke-opacity=".7" stroke-width="3" stroke-linecap="round"/>
+  <rect width="128" height="128" rx="28" fill="url(#bg)"/>
+  <rect x="36" y="30" width="56" height="66" rx="9" fill="none" stroke="#F4F5F8" stroke-width="6"/>
+  <path d="M47 52H81M47 65H73" stroke="#F4F5F8" stroke-opacity=".55" stroke-width="6" stroke-linecap="round"/>
+  <path d="M47 78H61" stroke="#19D3A2" stroke-width="6" stroke-linecap="round"/>
+  <path d="M14 110C34 104 58 112 88 100C100 95 108 88 113 80" fill="none" stroke="url(#t1)" stroke-width="7" stroke-linecap="round"/>
+  <circle cx="113" cy="80" r="6" fill="#FFB020"/>
+  <path d="M112 20C100 24 84 20 68 18C56 17 44 20 34 24" fill="none" stroke="url(#t2)" stroke-width="6" stroke-linecap="round"/>
+  <circle cx="33" cy="24.5" r="5" fill="#3D9BFF"/>
 </svg>

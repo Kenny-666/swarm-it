@@ -52,17 +52,17 @@ try {
       await draft(tab); // eslint-disable-line no-undef
       return chrome.action.getBadgeText({ tabId: tab.id });
     }, page.url());
-  const sheet = () => page.evaluate(() => !!document.querySelector("swarmline-sheet"));
+  const sheet = () => page.evaluate(() => !!document.querySelector("swarmline-layer"));
 
   const badge = await click();
   await sleep(400);
   check("toolbar click draws the page", (await sheet()) && badge === "", { badge });
-  check("overlay is closed to page scripts", await page.evaluate(() => document.querySelector("swarmline-sheet").shadowRoot === null));
+  check("overlay is closed to page scripts", await page.evaluate(() => document.querySelector("swarmline-layer").shadowRoot === null));
   await sleep(2500);
   await page.keyboard.press("f");
   await sleep(1600);
-  check("F lifts the blueprint and leaves the page usable", await page.evaluate(() => {
-    const h = document.querySelector("swarmline-sheet");
+  check("F finishes the build and leaves the page usable", await page.evaluate(() => {
+    const h = document.querySelector("swarmline-layer");
     return !!h && document.elementFromPoint(640, 300) !== h;
   }));
   await page.keyboard.press("Escape");

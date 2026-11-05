@@ -1,9 +1,9 @@
 {
   "manifest_version": 3,
-  "name": "Swarmline – Blueprint Page Builder",
+  "name": "Swarmline – Watch Any Website Build Itself",
   "short_name": "Swarmline",
   "version": "1.0.0",
-  "description": "A swarm of glowing pen-nibs draws any web page as a blueprint: outlined, measured and revealed, then live again.",
+  "description": "One click and a swarm builds any website live: boxes traced, text typed, images scanned in, then it’s live again.",
   "minimum_chrome_version": "104",
   "action": {
     "default_title": "Swarmline (Alt+Shift+L)",
@@ -20,12 +20,21 @@
     "48": "icons/icon48.png",
     "128": "icons/icon128.png"
   },
-  "background": { "service_worker": "background.js" },
-  "permissions": ["activeTab", "scripting"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "permissions": [
+    "activeTab",
+    "scripting"
+  ],
   "commands": {
     "_execute_action": {
-      "suggested_key": { "default": "Alt+Shift+L", "mac": "Alt+Shift+L" },
-      "description": "Draw this page as a blueprint"
+      "suggested_key": {
+        "default": "Alt+Shift+L",
+        "mac": "Alt+Shift+L"
+      },
+      "description": "Build this page with the swarm"
     }
-  }
+  },
+  "homepage_url": "https://tauquirshayaan.github.io/swarmline/"
 }
