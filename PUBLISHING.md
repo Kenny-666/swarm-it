@@ -4,9 +4,9 @@ Everything in this folder is ready. These are the steps only you can do (account
 
 ## 0. Before you start
 
-- [ ] Decide the **support email** that will appear publicly on the website and the store listing, and run:
+- [x] Support email set to **imperfxt@gmail.com** (shown on the website and privacy policy). To change it later:
       ```sh
-      npm run configure -- --email you@example.com
+      npm run configure -- --email new@example.com
       ```
 - [ ] Run the full check. It must say **READY**:
       ```sh
@@ -35,7 +35,7 @@ The store requires a public privacy policy page, and the site in `site/` provide
 
 1. Go to the [Developer Dashboard](https://chrome.google.com/webstore/devconsole) and sign in with the Google account you want to publish under.
 2. Accept the developer agreement and pay the one-time registration fee.
-3. In **Account**, set the **publisher name** and **contact email**, and verify the email (Google sends a link). Submission isn't possible until the contact email is verified.
+3. In **Account**, set the **publisher name** and **contact email** (use imperfxt@gmail.com), and verify the email (Google sends a link). Submission isn't possible until the contact email is verified.
 
 ## 3. Create the item
 
