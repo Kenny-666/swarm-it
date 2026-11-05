@@ -29,7 +29,6 @@
   // toolbar placement for this tab only: kept in memory, never stored
   const prefs = { hudHidden: false, hudPos: null };
   const INK = "#2F6BFF"; // the one colour every drawing mark uses: a design tool's selection blue
-  const CURSORS = ["#2F6BFF", "#7C5CFF", "#2F6BFF", "#0FA38F"]; // pointers: mostly blue, two quiet accents
   const PALETTE = ["#FF5A6E", "#FFB020", "#19D3A2", "#3D9BFF", "#A46BFF", "#FF7AC8", "#2FE0F0", "#FF8A3D"];
 
   const SKIP = new Set([
@@ -1058,7 +1057,7 @@ canvas.off{pointer-events:none}
         return false;
       }
       if (u.step === 2) {
-        const dur = 0.32 + 0.16 * Math.log2(1 + Math.hypot(u.w, u.h) / 90);
+        const dur = 0.26 + 0.13 * Math.log2(1 + Math.hypot(u.w, u.h) / 90);
         u.p = clamp(u.st / dur, 0, 1);
         if (u.p >= 1) {
           u.step = 3;
@@ -1158,7 +1157,7 @@ canvas.off{pointer-events:none}
       for (let i = 0; i < n; i++) {
         const a = (i / n) * Math.PI * 2;
         this.nibs.push({
-          i, unit: null, role: 0, attached: false, vis: 0, color: CURSORS[i % CURSORS.length], press: 0,
+          i, unit: null, role: 0, attached: false, vis: 0, color: PALETTE[i % PALETTE.length], press: 0,
           x: this.W / 2 + Math.cos(a) * 6, y: this.H / 2 + Math.sin(a) * 6,
           vx: 0, vy: 0, ang: 0, tool: 0, goal: null, move: null, hand: i % 2 ? 1 : -1,
           seed: Math.random() * Math.PI * 2, born: 0.55 + i * 0.02, size: 1,
@@ -1215,8 +1214,8 @@ canvas.off{pointer-events:none}
       const tx = cx + px * ct - py * stl;
       const ty = cy + px * stl + py * ct;
       // a spring-damper towards that point, plus wander and personal space
-      const kS = after ? 7 : 3.6;
-      const kD = after ? 3.4 : 2.3;
+      const kS = after ? 8.5 : 4.6;
+      const kD = after ? 3.8 : 2.6;
       let ax = (tx - n.x) * kS - n.pvx * kD;
       let ay = (ty - n.y) * kS - n.pvy * kD;
       n.wa += (Math.random() - 0.5) * dt * 5;
@@ -1243,7 +1242,7 @@ canvas.off{pointer-events:none}
       n.pvx += ax * dt;
       n.pvy += ay * dt;
       const vm = Math.hypot(n.pvx, n.pvy);
-      const vmax = after ? 1800 : 820;
+      const vmax = after ? 2100 : 1050;
       if (vm > vmax) {
         n.pvx *= vmax / vm;
         n.pvy *= vmax / vm;
@@ -1387,7 +1386,7 @@ canvas.off{pointer-events:none}
             const bend = d * (0.08 + Math.random() * 0.14) * (Math.random() < 0.8 ? n.hand : -n.hand);
             n.move = d < 4 ? null : {
               sx: n.x, sy: n.y, t: 0,
-              dur: ((0.42 + 0.2 * Math.log2(1 + d / 50)) * (0.9 + Math.random() * 0.25)) / pace,
+              dur: ((0.32 + 0.15 * Math.log2(1 + d / 50)) * (0.9 + Math.random() * 0.25)) / pace,
               bx: (-dy / (d || 1)) * bend, by: (dx / (d || 1)) * bend,
             };
             n.attached = false;
