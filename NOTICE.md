@@ -16,5 +16,6 @@ their authors:
 - `tests/smoke.mjs` and `tests/extension.mjs`
 
 Swarmline adds its own name, icon, website, store listing, build and packaging scripts,
-the toolbar's hide (H) and drag-to-move controls, the T shortcut, and Auto-tour being on
-from the start.
+its own cursor set and colours, its own toolbar design (with hide (H) and drag-to-move
+controls and the T shortcut), its own sound design (a soft mallet instrument in D minor
+pentatonic with light key and trackpad taps), and Touring being on from the start.

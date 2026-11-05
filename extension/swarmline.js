@@ -25,14 +25,14 @@
   // ---------------------------------------------------------------- constants
 
   const NAMES = [
-    "Ada", "Linus", "Grace", "Alan", "Margaret", "Ken", "Barbara", "Dennis",
-    "Radia", "Guido", "Frances", "Bjarne", "Hedy", "Tim", "Katherine", "Edsger",
-    "Joan", "Donald", "Sophie", "Niklaus", "Anita", "Brian", "Mary", "Rob",
-    "Ida", "Yukihiro", "Shafi", "Leslie", "Jean", "Vint", "Lynn", "Bram",
+    "Aria", "Blake", "Cleo", "Dash", "Ezra", "Faye", "Gale", "Hugo",
+    "Iris", "Jade", "Kai", "Luna", "Milo", "Nia", "Otto", "Pia",
+    "Quinn", "Remy", "Sage", "Theo", "Uma", "Vale", "Wren", "Xavi",
+    "Yara", "Zane", "Arlo", "Bea", "Cyrus", "Dara", "Eden", "Finn",
   ];
   const COLORS = [
-    "#F24E1E", "#A259FF", "#1ABCFE", "#0ACF83", "#FF7262", "#FFC700",
-    "#9747FF", "#E8467C", "#14AE5C", "#0D99FF", "#FF8A00", "#00B5CE",
+    "#FF5A6E", "#3D9BFF", "#FFB020", "#19D3A2", "#A46BFF", "#FF7AC8",
+    "#2FE0F0", "#FF8A3D", "#6C7CFF", "#4CD964", "#FF4F9A", "#00C2A8",
   ];
   const BLUE = "#0D99FF";
   const RED = "#F24822";
@@ -91,14 +91,15 @@
 
   // ----------------------------------------------------------- cursor shapes
 
-  const ARROW_D =
-    "M4.6 3.9 C4.2 3.1 4.9 2.4 5.7 2.8 L20.6 9.4 C21.5 9.8 21.4 11.1 20.4 11.3 L13.9 12.9 C13.4 13 13 13.4 12.9 13.9 L11.3 20.4 C11.1 21.4 9.8 21.5 9.4 20.6 Z";
+  // Swarmline's pointer set: a classic arrow with a tail (tip at the hotspot), a
+  // pencil for lines, a gapped crosshair for drawing, a flat-serif I-beam for text.
+  const ARROW_D = "M4.5 3.2 L4.5 21 L9.1 16.9 L12.3 23.9 L15.9 22.3 L12.8 15.4 L19.2 15.3 Z";
   const HOT = {
-    arrow: [5, 3.5],
-    dup: [5, 3.5],
-    pen: [3, 3],
-    "pen-add": [3, 3],
-    "pen-close": [3, 3],
+    arrow: [4.5, 3.2],
+    dup: [4.5, 3.2],
+    pen: [3.2, 3.2],
+    "pen-add": [3.2, 3.2],
+    "pen-close": [3.2, 3.2],
     cross: [12, 12],
     ibeam: [12, 12],
     ew: [12, 12],
@@ -106,51 +107,47 @@
   };
 
   function cursorSVG(shape, c) {
-    const st = 'stroke="#fff" stroke-width="1.5" stroke-linejoin="round"';
+    const st = 'stroke="#fff" stroke-width="1.6" stroke-linejoin="round"';
+    const badge = (inner) =>
+      `<circle cx="21.5" cy="21.5" r="5.2" fill="${c}" stroke="#fff" stroke-width="1.5"/>` + inner;
     switch (shape) {
       case "arrow":
-        return `<path d="${ARROW_D}" fill="${c}" ${st}/>`;
+        return `<path d="${ARROW_D}" fill="${c}" ${st}/><path d="M6.3 7.4 L6.3 14.6" stroke="#fff" stroke-opacity=".45" stroke-width="1.2" stroke-linecap="round"/>`;
       case "dup":
+        // the arrow with a plus: holding Alt to copy
         return (
-          `<path d="${ARROW_D}" transform="translate(4 3.5)" fill="#fff" stroke="${c}" stroke-width="1.3" stroke-linejoin="round"/>` +
-          `<path d="${ARROW_D}" fill="${c}" ${st}/>`
+          `<path d="${ARROW_D}" fill="${c}" ${st}/>` +
+          badge('<path d="M21.5 18.9 V24.1 M18.9 21.5 H24.1" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/>')
         );
       case "pen":
       case "pen-add":
       case "pen-close": {
-        let s =
-          `<path d="M17.4 10.6 L20.6 13.8 L13.8 20.6 L10.6 17.4 Z" fill="${c}" ${st}/>` +
-          `<path d="M3 3 L13.1 6.3 L17.4 10.6 L10.6 17.4 L6.3 13.1 Z" fill="${c}" ${st}/>` +
-          `<path d="M3.6 3.6 L8.9 8.9" stroke="#fff" stroke-width="1.2" stroke-linecap="round"/>` +
-          `<circle cx="10.2" cy="10.2" r="1.75" fill="none" stroke="#fff" stroke-width="1.2"/>`;
-        if (shape === "pen-add")
-          s +=
-            `<g stroke-linecap="round"><path d="M23 19.5 V26.5 M19.5 23 H26.5" stroke="#fff" stroke-width="3.4"/>` +
-            `<path d="M23 19.5 V26.5 M19.5 23 H26.5" stroke="#1E1E1E" stroke-width="1.3"/></g>`;
-        if (shape === "pen-close")
-          s +=
-            `<circle cx="23" cy="23" r="2.8" fill="none" stroke="#fff" stroke-width="3.2"/>` +
-            `<circle cx="23" cy="23" r="2.8" fill="none" stroke="#1E1E1E" stroke-width="1.2"/>`;
-        return s;
+        // a pencil, point at the hotspot
+        let p =
+          `<path d="M3.2 3.2 L9 4.9 L20.6 16.5 L16.5 20.6 L4.9 9 Z" fill="${c}" ${st}/>` +
+          `<path d="M3.2 3.2 L6.6 4.2 L4.2 6.6 Z" fill="#fff"/>` +
+          `<path d="M17.6 13.5 L13.5 17.6" stroke="#fff" stroke-width="1.3"/>`;
+        if (shape === "pen-add") p += badge('<path d="M21.5 18.9 V24.1 M18.9 21.5 H24.1" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/>');
+        if (shape === "pen-close") p += badge('<circle cx="21.5" cy="21.5" r="2" fill="none" stroke="#fff" stroke-width="1.4"/>');
+        return p;
       }
-      case "cross":
+      case "cross": {
+        // a crosshair with an open centre and a dot, so the corner it draws stays visible
+        const d = "M12 2.5 V8.5 M12 15.5 V21.5 M2.5 12 H8.5 M15.5 12 H21.5";
         return (
-          `<g stroke-linecap="round"><path d="M12 3.5 V20.5 M3.5 12 H20.5" stroke="#fff" stroke-width="3.6"/>` +
-          `<path d="M12 3.5 V20.5 M3.5 12 H20.5" stroke="${c}" stroke-width="1.5"/></g>`
+          `<g stroke-linecap="round"><path d="${d}" stroke="#fff" stroke-width="4"/><path d="${d}" stroke="${c}" stroke-width="1.8"/></g>` +
+          `<circle cx="12" cy="12" r="1.9" fill="${c}" stroke="#fff" stroke-width="1.2"/>`
         );
+      }
       case "ibeam": {
-        const d =
-          "M8.5 4.5 H10.5 Q12 4.5 12 6 Q12 4.5 13.5 4.5 H15.5 M12 6 V18 M8.5 19.5 H10.5 Q12 19.5 12 18 Q12 19.5 13.5 19.5 H15.5";
-        return (
-          `<g fill="none" stroke-linecap="round"><path d="${d}" stroke="#fff" stroke-width="3.6"/>` +
-          `<path d="${d}" stroke="${c}" stroke-width="1.5"/></g>`
-        );
+        const d = "M8.5 4.2 H15.5 M12 4.2 V19.8 M8.5 19.8 H15.5";
+        return `<g fill="none" stroke-linecap="round"><path d="${d}" stroke="#fff" stroke-width="4"/><path d="${d}" stroke="${c}" stroke-width="1.9"/></g>`;
       }
       case "ew":
-      case "ns":
-        return `<path d="M2.5 12 L7 7.5 V10.4 H17 V7.5 L21.5 12 L17 16.5 V13.6 H7 V16.5 Z"${
-          shape === "ns" ? ' transform="rotate(90 12 12)"' : ""
-        } fill="${c}" ${st}/>`;
+      case "ns": {
+        const d = "M6.5 8.5 L3 12 L6.5 15.5 M17.5 8.5 L21 12 L17.5 15.5 M3.5 12 H20.5";
+        return `<g fill="none" stroke-linecap="round" stroke-linejoin="round"${shape === "ns" ? ' transform="rotate(90 12 12)"' : ""}><path d="${d}" stroke="#fff" stroke-width="4.2"/><path d="${d}" stroke="${c}" stroke-width="2"/></g>`;
+      }
     }
     return "";
   }
@@ -1844,7 +1841,7 @@
 .badges,.cursors{position:absolute;inset:0;pointer-events:none;overflow:hidden}
 .badge{position:absolute;transform:translate(-50%);padding:1px 4px;border-radius:2px;color:#fff;font:600 11px/16px Inter,system-ui,-apple-system,"Segoe UI",sans-serif;white-space:nowrap;font-variant-numeric:tabular-nums}
 .cursor{position:absolute;left:0;top:0;will-change:transform}
-.cursor svg{position:absolute;overflow:visible;filter:drop-shadow(0 1px 1.5px rgba(0,0,0,.28))}
+.cursor svg{position:absolute;overflow:visible;filter:drop-shadow(0 2px 2.5px rgba(15,23,42,.32))}
 .rulers{position:absolute;inset:0;pointer-events:none}
 .ruler{position:absolute;background:#2c2c2c;pointer-events:none}
 .ruler svg{display:block}
@@ -1858,7 +1855,8 @@
 .intro.gone{opacity:0;transform:translate(-50%,-50%) scale(.9)}
 .intro img{display:block;width:60px;height:60px;object-fit:contain;filter:grayscale(1);opacity:.42;border-radius:14px}
 .intro .mono{width:60px;height:60px;border-radius:16px;background:#D7DADE;color:#fff;font:700 30px/60px Inter,system-ui,sans-serif;text-align:center}
-.hud{position:absolute;left:50%;bottom:20px;transform:translate(-50%,18px);opacity:0;display:flex;align-items:center;gap:10px;padding:6px 6px 6px 10px;background:rgba(30,30,30,.94);-webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px);color:#fff;border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.28),inset 0 0 0 1px rgba(255,255,255,.07);font:500 12px/1 Inter,system-ui,-apple-system,"Segoe UI",sans-serif;pointer-events:auto;transition:opacity .45s ease,transform .45s cubic-bezier(.2,.8,.2,1);white-space:nowrap;user-select:none;z-index:5}
+.hud{position:absolute;left:50%;bottom:22px;transform:translate(-50%,18px);opacity:0;display:flex;align-items:center;gap:8px;padding:7px 7px 9px 9px;background:linear-gradient(180deg,rgba(26,28,40,.95),rgba(14,15,22,.95));-webkit-backdrop-filter:blur(16px) saturate(150%);backdrop-filter:blur(16px) saturate(150%);color:#F4F5F8;border-radius:16px;box-shadow:0 18px 44px rgba(0,0,0,.34),inset 0 0 0 1px rgba(255,255,255,.08);font:500 12px/1 Inter,system-ui,-apple-system,"Segoe UI",sans-serif;pointer-events:auto;transition:opacity .45s ease,transform .45s cubic-bezier(.2,.8,.2,1);white-space:nowrap;user-select:none;z-index:5;overflow:hidden}
+.hud .mark{width:26px;height:26px;flex:none;display:block}
 .hud.on{opacity:1;transform:translate(-50%,0)}
 .hud{cursor:grab;touch-action:none}
 .hud.dragging{cursor:grabbing;transition:opacity .45s ease}
@@ -1868,27 +1866,29 @@
 .hud.placed.on.gone{transform:translate(0,18px)}
 .hud button.ico{display:inline-flex;align-items:center;justify-content:center;padding:6px 8px}
 .hud button.ico svg{width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
-.toast{position:absolute;left:50%;bottom:24px;transform:translate(-50%,10px);padding:9px 14px;border-radius:10px;background:rgba(30,30,30,.94);color:#fff;font:500 12px/1.2 Inter,system-ui,-apple-system,"Segoe UI",sans-serif;box-shadow:0 10px 30px rgba(0,0,0,.28);opacity:0;pointer-events:none;transition:opacity .35s ease,transform .35s ease;white-space:nowrap;z-index:6}
+.toast{position:absolute;left:50%;bottom:26px;transform:translate(-50%,10px);padding:9px 14px;border-radius:12px;background:rgba(16,17,24,.94);color:#fff;font:500 12px/1.2 Inter,system-ui,-apple-system,"Segoe UI",sans-serif;box-shadow:0 10px 30px rgba(0,0,0,.28);opacity:0;pointer-events:none;transition:opacity .35s ease,transform .35s ease;white-space:nowrap;z-index:6}
 .toast.on{opacity:1;transform:translate(-50%,0)}
-.toast kbd{font:600 11px/1 Inter,system-ui,sans-serif;padding:3px 6px;border-radius:5px;background:#3a3a3a;margin:0 2px}
-.hud .dots{display:flex;padding-left:5px}
-.hud .dots i{display:block;width:18px;height:18px;margin-left:-5px;border-radius:50%;border:2px solid #1e1e1e;font:700 9px/14px Inter,system-ui,sans-serif;font-style:normal;text-align:center;color:#fff;transition:background .3s}
-.hud .txt,.hud .status{display:flex;align-items:center;gap:7px;color:#cfcfcf;font-variant-numeric:tabular-nums}
-.hud .txt b{color:#fff;font-weight:600}
-.hud .sep{width:1px;height:12px;background:#444}
-.hud .bar{width:64px;height:3px;border-radius:2px;background:#3a3a3a;overflow:hidden}
-.hud .bar i{display:block;height:100%;width:0;background:#0D99FF;transition:width .35s ease}
-.hud button{all:unset;cursor:pointer;padding:7px 10px;border-radius:8px;background:#2c2c2c;color:#fff;font:500 12px/1 Inter,system-ui,-apple-system,sans-serif;transition:background .15s}
-.hud button:hover{background:#3a3a3a}
-.hud button.pri{background:#0D99FF}
-.hud button.pri:hover{background:#2aa6ff}
-.hud button.on{background:rgba(13,153,255,.22);color:#8fd0ff}
+.toast kbd{font:600 11px/1 Inter,system-ui,sans-serif;padding:3px 6px;border-radius:6px;background:rgba(255,255,255,.14);margin:0 2px}
+.hud .dots{display:flex;padding-left:7px}
+.hud .dots i{display:block;width:20px;height:20px;margin-left:-7px;border-radius:7px;border:2px solid #151720;font:700 9.5px/16px Inter,system-ui,sans-serif;font-style:normal;text-align:center;color:#fff;transition:background .3s}
+.hud .txt,.hud .status{display:flex;align-items:center;gap:7px;color:#A9AFBF;font-variant-numeric:tabular-nums}
+.hud .txt b{color:#fff;font-weight:650}
+.hud .sep{width:4px;height:4px;border-radius:50%;background:#4A5064}
+.hud .bar{position:absolute;left:0;right:0;bottom:0;width:auto;height:3px;background:rgba(255,255,255,.06);overflow:hidden}
+.hud .bar i{display:block;height:100%;width:0;background:linear-gradient(90deg,#FF5A6E,#A46BFF 55%,#3D9BFF);transition:width .35s ease}
+.hud button{all:unset;cursor:pointer;padding:8px 11px;border-radius:10px;background:rgba(255,255,255,.07);color:#F4F5F8;font:600 12px/1 Inter,system-ui,-apple-system,sans-serif;transition:background .15s,color .15s}
+.hud button:hover{background:rgba(255,255,255,.14)}
+.hud button:focus-visible{outline:2px solid #3D9BFF;outline-offset:1px}
+.hud button.pri{background:linear-gradient(90deg,#FF5A6E,#A46BFF 55%,#3D9BFF)}
+.hud button.pri:hover{filter:brightness(1.1)}
+.hud button.on{background:#2F6BFF;color:#fff}
+.hud button.on:hover{background:#4A7FFF}
 .hud button[hidden]{display:none}
-.hud .x{padding:7px 9px;color:#aaa}
-.hud button.snd{display:flex;align-items:center;gap:6px;padding:6px 8px}
-.hud button.snd.off{color:#8a8a8a}
-.hud button.snd.tap{background:#0D99FF;animation:hudpulse 1.6s ease-in-out infinite}
-@keyframes hudpulse{50%{box-shadow:0 0 0 4px rgba(13,153,255,.28)}}
+.hud .x{padding:8px 10px;color:#9CA3B4;background:transparent}
+.hud button.snd{display:flex;align-items:center;gap:6px;padding:7px 9px}
+.hud button.snd.off{color:#7D8496}
+.hud button.snd.tap{background:#2F6BFF;animation:hudpulse 1.6s ease-in-out infinite}
+@keyframes hudpulse{50%{box-shadow:0 0 0 4px rgba(47,107,255,.3)}}
 `;
 
   // -------------------------------------------------------------------- env
@@ -1987,9 +1987,10 @@
 <div class="cursors"></div>
 <div class="rulers"></div>
 <div class="hud" role="toolbar" aria-label="Swarmline">
+  <svg class="mark" viewBox="0 0 128 128" aria-hidden="true"><defs><linearGradient id="swl-g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#FF5470"/><stop offset=".52" stop-color="#9B4DFF"/><stop offset="1" stop-color="#2E6BFF"/></linearGradient></defs><rect width="128" height="128" rx="30" fill="url(#swl-g)"/><path d="M86 56 V44 a12 12 0 0 0 -12 -12 H32 a12 12 0 0 0 -12 12 V84 a12 12 0 0 0 12 12 H62" fill="none" stroke="#fff" stroke-width="10" stroke-linecap="round"/><path d="M35 62 H64" stroke="#fff" stroke-width="9" stroke-linecap="round"/><path d="M82 60 L82 93.6 L90.5 86 L96.1 98.5 L102.6 95.6 L97 83.3 L108.2 83.1 Z" fill="#fff" stroke="#24104F" stroke-width="3" stroke-linejoin="round"/></svg>
   <div class="dots" aria-hidden="true"></div>
   <div class="txt"><span class="status">Scanning page…</span></div>
-  <div class="bar" role="progressbar" aria-label="Layers built" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><i></i></div>
+  <div class="bar" role="progressbar" aria-label="Pieces built" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><i></i></div>
   <button data-a="tour" class="on" title="Auto-scroll while the swarm builds (T)" aria-pressed="true">Touring</button>
   <button data-a="speed" title="Build speed" aria-label="Build speed 1×">1×</button>
   <button data-a="sound" class="snd" title="Sound (M)" aria-label="Sound (M)"></button>
@@ -3530,13 +3531,13 @@
 
   // ------------------------------------------------------------------ sound
 
-  // A glass piano in E. Every finished piece of the page plays one note of the
-  // E major pentatonic, quantized to a soft 16th-note grid, so a busy swarm comes
-  // out as a generative melody: big sections low, small things high, pitch rising
-  // left to right, panned to where the cursor is. Typing and clicks are quiet
-  // paper ticks underneath. All synthesized; no audio files.
-  const PENTA = [0, 2, 4, 7, 9]; // E F# G# B C#
-  const E2 = 40;
+  // A soft mallet instrument in D. Every finished piece of the page plays one note of
+  // the D minor pentatonic on a gentle 8th-note grid, so a busy swarm comes out as a
+  // calm generative melody: big sections low, small things high, pitch rising left to
+  // right, panned to where the cursor is. Typing is light laptop-key taps, clicks are
+  // trackpad taps. All synthesized; no audio files.
+  const PENTA = [0, 3, 5, 7, 10]; // D F G A C
+  const E2 = 38; // D2: the root (name kept for the engine's call sites)
   const mtof = (m) => 440 * Math.pow(2, (m - 69) / 12);
   let soundPref = true;
   const SPK_ICON = '<svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 6v4h2.5l3.5 3V3L5 6z" fill="currentColor"/>';
@@ -3545,7 +3546,7 @@
     constructor() {
       this.on = soundPref;
       this.ctx = null;
-      this.bpm = 104;
+      this.bpm = 92;
       this.slots = new Map();
       this.lastKey = new Map();
       this.keyTimes = [];
@@ -3577,9 +3578,9 @@
       comp.connect(out);
       out.connect(ctx.destination);
       const verb = ctx.createConvolver();
-      verb.buffer = this.impulse(3.2, 2.4);
+      verb.buffer = this.impulse(2.1, 3.2);
       const wet = ctx.createGain();
-      wet.gain.value = 0.5;
+      wet.gain.value = 0.36;
       verb.connect(wet);
       wet.connect(master);
       this.out = out;
@@ -3672,34 +3673,33 @@
       return g;
     }
 
-    // Glass piano: a few sine partials (one inharmonic, for the glass) with a
-    // soft felt-hammer tick, long exponential ring.
+    // Soft mallet (marimba-like): a warm fundamental, the bar's bright 4th and 10th
+    // partials dying fast, and a felt "tock" on the attack.
     piano(midi, when, vel, pan, ring = 2.4) {
       const now = this.now();
       this.ends = this.ends.filter((e) => e > now);
-      if (this.ends.length >= 28) return;
+      if (this.ends.length >= 24) return;
       const ctx = this.ctx;
       const f = mtof(midi);
-      const v = this.bus(when, pan, 0.85);
-      v.gain.value = 0.3 * vel;
-      const hi = f > 900;
+      const v = this.bus(when, pan, 0.55);
+      v.gain.value = 0.34 * vel;
+      const len = Math.min(2.2, ring * 0.55);
       const parts = [
         [1, 1, 1],
-        [2, 0.38, 0.55],
-        [3, 0.12, 0.32],
-        [2.756, 0.16, 0.42],
-        [5.4, 0.05, 0.16],
+        [4, 0.22, 0.16],
+        [10, 0.06, 0.05],
+        [2, 0.1, 0.4],
       ];
       let last = null;
       for (const [r, a, d] of parts) {
-        if (f * r > 15000) continue;
+        if (f * r > 14000) continue;
         const o = ctx.createOscillator();
-        o.type = "sine";
-        o.frequency.value = f * r * (1 + (Math.random() - 0.5) * 0.002);
+        o.type = r === 1 ? "triangle" : "sine";
+        o.frequency.value = f * r * (1 + (Math.random() - 0.5) * 0.003);
         const g = ctx.createGain();
-        const dec = ring * d * (hi ? 0.65 : 1);
+        const dec = Math.max(0.05, len * d);
         g.gain.setValueAtTime(0, when);
-        g.gain.linearRampToValueAtTime(a, when + 0.005);
+        g.gain.linearRampToValueAtTime(a, when + 0.004);
         g.gain.exponentialRampToValueAtTime(0.0006, when + dec);
         o.connect(g);
         g.connect(v);
@@ -3707,8 +3707,8 @@
         o.stop(when + dec + 0.05);
         last = o;
       }
-      this.hammer(when, v, f, 0.5);
-      this.ends.push(when + ring * (hi ? 0.65 : 1));
+      this.hammer(when, v, f * 0.5, 0.7);
+      this.ends.push(when + len);
       if (last) last.onended = () => v.disconnect();
     }
 
@@ -3718,8 +3718,8 @@
       src.buffer = this.noiseBuf;
       const bp = ctx.createBiquadFilter();
       bp.type = "bandpass";
-      bp.frequency.value = Math.min(9000, f * 4 + 1200);
-      bp.Q.value = 1.2;
+      bp.frequency.value = Math.min(5000, f * 2 + 500);
+      bp.Q.value = 0.9;
       const g = ctx.createGain();
       g.gain.setValueAtTime(0, when);
       g.gain.linearRampToValueAtTime(0.25 * amt, when + 0.001);
@@ -3755,8 +3755,8 @@
 
     // one mechanical key: a sharp click on top of a short "thock" (deeper for space)
     clack(when, pan, space, vel = 1) {
-      this.tick(when, pan, rand(3600, 5600), 2.2, rand(0.2, 0.3) * vel, rand(0.006, 0.011));
-      this.tick(when + rand(0.001, 0.005), pan, space ? rand(380, 560) : rand(850, 1500), 1.6, (space ? 0.26 : rand(0.13, 0.2)) * vel, space ? 0.065 : rand(0.025, 0.042));
+      this.tick(when, pan, rand(2200, 3000), 3, rand(0.28, 0.36) * vel, rand(0.004, 0.007));
+      this.tick(when + rand(0.0005, 0.002), pan, space ? rand(260, 340) : rand(420, 640), 1.2, (space ? 0.32 : rand(0.17, 0.23)) * vel, space ? 0.05 : rand(0.016, 0.026));
     }
 
     key(x, vw, id, n = 1, space = 0) {
@@ -3786,9 +3786,8 @@
       if (this.pressTimes.length > 40) return;
       this.pressTimes.push(t);
       const pan = this.pan(x, vw);
-      this.tick(t + 0.004, pan, rand(2100, 2700), 4, 0.32, 0.012);
-      this.tick(t + 0.005, pan, rand(650, 850), 2, 0.16, 0.022);
-      this.tick(t + rand(0.055, 0.075), pan, rand(2900, 3400), 4, 0.15, 0.008);
+      this.tick(t + 0.003, pan, rand(1500, 1900), 6, 0.7, 0.01);
+      this.tick(t + 0.004, pan, rand(320, 420), 1.5, 0.34, 0.032);
     }
 
     // a finished element: rect, image, text, line, dup, guide, edit, restyle
@@ -3832,35 +3831,17 @@
       if (!this.ready()) return;
       const t = this.now() + 0.004;
       const pan = this.pan(x, vw);
-      this.tick(t, pan, 4800, 3, 0.36, 0.012);
-      this.tick(t + 0.002, pan, 1200, 2, 0.2, 0.03);
+      this.tick(t, pan, 2600, 8, 0.7, 0.022);
+      this.tick(t + 0.001, pan, 700, 3, 0.36, 0.042);
     }
 
-    // the page dissolving: an airy swell over a low open fifth
+    // the page clearing: a quick rising sparkle over a soft open fifth
     intro() {
       this.log("intro", []);
       if (!this.ready()) return;
-      const ctx = this.ctx;
-      const t = this.now() + 0.02;
-      const src = ctx.createBufferSource();
-      src.buffer = this.noiseBuf;
-      src.loop = true;
-      const bp = ctx.createBiquadFilter();
-      bp.type = "bandpass";
-      bp.Q.value = 0.8;
-      bp.frequency.setValueAtTime(260, t);
-      bp.frequency.exponentialRampToValueAtTime(2400, t + 0.9);
-      bp.frequency.exponentialRampToValueAtTime(900, t + 1.8);
-      const g = this.bus(t, 0, 0.6);
-      g.gain.setValueAtTime(0, t);
-      g.gain.linearRampToValueAtTime(0.16, t + 0.7);
-      g.gain.exponentialRampToValueAtTime(0.0005, t + 2.2);
-      src.connect(bp);
-      bp.connect(g);
-      src.start(t);
-      src.stop(t + 2.3);
-      src.onended = () => g.disconnect();
-      for (const [m, d] of [[E2, 0], [E2 + 7, 0.08], [E2 + 12, 0.16]]) this.pad(m, t + 0.3 + d, 0.07, 2.6);
+      const t = this.now() + 0.03;
+      [E2 + 24, E2 + 31, E2 + 36, E2 + 39, E2 + 43, E2 + 48].forEach((m, i) => this.piano(m, t + i * 0.07, 0.16 - i * 0.012, -0.5 + i * 0.2, 1.8));
+      for (const [m, d] of [[E2 + 12, 0], [E2 + 19, 0.1]]) this.pad(m, t + 0.2 + d, 0.05, 2.2);
     }
 
     pad(midi, when, vel, len) {
@@ -3869,9 +3850,9 @@
       g.gain.setValueAtTime(0, when);
       g.gain.linearRampToValueAtTime(vel, when + len * 0.4);
       g.gain.exponentialRampToValueAtTime(0.0005, when + len);
-      for (const det of [-4, 4]) {
+      for (const det of [-6, 6]) {
         const o = ctx.createOscillator();
-        o.type = "triangle";
+        o.type = "sine";
         o.frequency.value = mtof(midi);
         o.detune.value = det;
         o.connect(g);
@@ -3886,7 +3867,7 @@
       if (!this.ready()) return;
       const { when } = this.grid(4);
       const step = 60 / this.bpm / 4;
-      [E2 + 24, E2 + 28, E2 + 31, E2 + 36, E2 + 40].forEach((m, i) => this.piano(m, when + i * step, 0.2, -0.5 + i * 0.25, 2));
+      [E2 + 31, E2 + 27, E2 + 24, E2 + 31, E2 + 36].forEach((m, i) => this.piano(m, when + i * step * 1.5, 0.32, -0.5 + i * 0.25, 1.8));
     }
 
     // the last chord rings: E major add9, strummed
@@ -3894,8 +3875,8 @@
       this.log("finale", []);
       if (!this.ready()) return;
       const { when } = this.grid(2);
-      const chord = [E2, E2 + 7, E2 + 12, E2 + 16, E2 + 19, E2 + 26, E2 + 28, E2 + 31, E2 + 36, E2 + 43];
-      chord.forEach((m, i) => this.piano(m, when + i * 0.035, 0.34 - i * 0.015, -0.6 + (i / chord.length) * 1.2, 5.5));
+      const chord = [E2, E2 + 7, E2 + 12, E2 + 15, E2 + 19, E2 + 22, E2 + 26, E2 + 31, E2 + 36];
+      chord.forEach((m, i) => this.piano(m, when + i * 0.055, 0.32 - i * 0.016, -0.6 + (i / chord.length) * 1.2, 4.4));
       this.pad(E2 + 12, when, 0.05, 5);
     }
 
@@ -3911,8 +3892,8 @@
       const bp = ctx.createBiquadFilter();
       bp.type = "bandpass";
       bp.Q.value = 1;
-      bp.frequency.setValueAtTime(3000, t);
-      bp.frequency.exponentialRampToValueAtTime(220, t + 1);
+      bp.frequency.setValueAtTime(300, t);
+      bp.frequency.exponentialRampToValueAtTime(3600, t + 0.9);
       const g = this.bus(t, 0, 0.5);
       g.gain.setValueAtTime(0.12, t);
       g.gain.exponentialRampToValueAtTime(0.0005, t + 1.1);
@@ -3920,7 +3901,8 @@
       bp.connect(g);
       src.start(t);
       src.stop(t + 1.2);
-      this.piano(E2 + 12, t + 0.05, 0.3, 0, 2.5);
+      this.piano(E2 + 24, t + 0.08, 0.26, -0.2, 2);
+      this.piano(E2 + 31, t + 0.16, 0.2, 0.2, 2);
     }
 
     close(after = 0) {
@@ -4293,12 +4275,12 @@
       const total = E.tasks.length;
       const done = E.doneCount;
       if (this.complete) return;
-      if (!E.started) v.status.innerHTML = `<b>${E.cursors.length}</b> agents ready<span class="sep"></span>${total.toLocaleString()} layers`;
+      if (!E.started) v.status.innerHTML = `<b>${E.cursors.length}</b> cursors ready<span class="sep"></span>${total.toLocaleString()} pieces to build`;
       else {
         const pend = E.tasks.length - done;
         const below = E.hasBelow();
         v.status.innerHTML =
-          `<b>${workers}</b> agents<span class="sep"></span><b>${done.toLocaleString()}</b> / ${total.toLocaleString()} layers` +
+          `<b>${workers}</b> cursors<span class="sep"></span><b>${done.toLocaleString()}</b> / ${total.toLocaleString()} built` +
           (below && pend && !this.tour && E.backlog() === 0 ? `<span class="sep"></span>scroll to keep building` : "");
       }
       v.barFill.style.width = total ? `${(done / total) * 100}%` : "0%";
@@ -4318,7 +4300,7 @@
       const v = this.view;
       const workers = E.cursors.filter((c) => c.worked).length + E.retired;
       const secs = (E.endTime - E.startTime).toFixed(1);
-      v.status.innerHTML = `Rebuilt by <b>${workers}</b> agents in <b>${secs}s</b>`;
+      v.status.innerHTML = `Built by <b>${workers}</b> cursors in <b>${secs} s</b>`;
       v.barFill.style.width = "100%";
       v.dots.innerHTML = "";
       v.root.querySelector('[data-a="live"]').hidden = false;
