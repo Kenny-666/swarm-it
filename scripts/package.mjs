@@ -10,7 +10,7 @@ import { fileURLToPath } from "node:url";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const src = path.join(root, "extension");
 const manifest = JSON.parse(fs.readFileSync(path.join(src, "manifest.json"), "utf8"));
-const files = ["manifest.json", "background.js", "swarmline.js", ...["16", "32", "48", "128"].map((n) => `icons/icon${n}.png`)];
+const files = ["manifest.json", "background.js", "swarmline.js", "settle.js", ...["16", "32", "48", "128"].map((n) => `icons/icon${n}.png`)];
 for (const f of files) if (!fs.existsSync(path.join(src, f))) throw new Error(`missing ${f} (run npm run assets for icons)`);
 
 const CRC = new Uint32Array(256).map((_, n) => {

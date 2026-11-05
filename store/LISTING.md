@@ -15,7 +15,7 @@ Upload `dist/swarmline-1.0.0.zip` (build it with `npm run package`).
 | Field | Value |
 | --- | --- |
 | **Title** (from the manifest) | Swarmline – Watch Any Website Build Itself |
-| **Summary** (from the manifest, 113 / 132 characters) | One click and a swarm builds any website live: boxes traced, text typed, images scanned in, then it’s live again. |
+| **Summary** (from the manifest) | One click and a swarm of cursors rebuilds any website, live: boxes drawn, text typed, copies dragged, then it goes live. |
 | **Category** | Developer Tools |
 | **Language** | English |
 
@@ -24,20 +24,20 @@ Upload `dist/swarmline-1.0.0.zip` (build it with `npm run package`).
 Paste this as-is:
 
 ```
-One click and any website becomes a blank canvas. Then a swarm builds it back, live, right in front of you.
+One click and any website is wiped to a blank design canvas. Then a swarm of multiplayer cursors rebuilds it, live, right in front of you.
 
-Swarmline sends a swarm of pointers across the page, working the way a designer does in a design tool, in reading order:
+The cursors work the way designers do in a design tool:
 
-• Boxes, cards and sections are clicked and dragged out, with a live size readout and selection handles, then fill in for real
-• Cards, list rows and other repeated parts are built once, then Alt-dragged as copies into place, with the spacing measured, and only what differs is retyped
-• Headlines and paragraphs are typed letter by letter, with a text cursor and caret
-• Image and video frames are dragged out, then the picture scans into place
-• Buttons, icons and form fields pop in where they belong
-• When the page is finished, the swarm follows your own mouse pointer until you exit
+• Rectangles are drawn with a crosshair, with live size readouts and selection handles
+• Text is typed letter by letter and snapped to alignment guides
+• Lines and dividers are drawn with the pen tool
+• Repeated parts (cards, rows, icons) are built once, then Alt-dragged as copies, with the spacing measured, and edited
+• Images are placed into their frames, and the page's own animations keep moving
+• When the build is done, press Go live to fade back to the real page; until then the swarm follows your mouse
 
-Everything appears in place on the real page, in the site's own colours and fonts. Nothing is copied or redrawn, so the finished page is exactly the live site, with its animations, video and links all working.
+Touring is on from the start, so the page scrolls along as it's built. Press T to turn it off and scroll yourself. Choose 1×, 2× or 3× speed, and turn the build's sound on or off.
 
-Auto-tour is on from the start: Swarmline glides down the page screen by screen, centring each one before the swarm builds it, and moves on the moment a screen is finished. Press T to turn it off and scroll yourself. Choose 1×, 2× or 3× speed, or press Finish to show the whole page at once.
+Credits: Swarmline runs on the Swarm Rebuild engine by Dhvanil Patel, a tribute to Swarm by Joel Califa. Used with permission.
 
 Great for:
 • Screen recordings, reels and launch videos of your own website
@@ -47,7 +47,7 @@ Great for:
 
 Private by design: Swarmline runs only on the tab you start it on, sends nothing anywhere and stores nothing. When you exit, the page is exactly as it was.
 
-Shortcuts: Alt+Shift+L start or stop · T auto-tour · F finish · H hide or show the controls (for clean recordings) · Esc exit. Drag the control bar to move it anywhere.
+Shortcuts: Alt+Shift+L start or stop · T tour · M sound · H hide or show the controls (for clean recordings) · Esc exit. Drag the control bar to move it anywhere.
 ```
 
 ### Graphic assets (all in `store/`)
@@ -76,15 +76,15 @@ The screenshots show Swarmline building `demo/index.html`, a page for a fictiona
 **Single purpose description:**
 
 ```
-Swarmline animates the current web page being built: it temporarily hides the page's elements and brings them back one by one with a swarm animation (tracing boxes, typing text, revealing images) until the live page is fully shown again.
+Swarmline plays an animation of the current web page being rebuilt by a swarm of cursors (drawing boxes, typing text, placing images), then fades back to the live page.
 ```
 
 **Permission justifications:**
 
 | Permission | Justification (paste) |
 | --- | --- |
-| `activeTab` | Lets Swarmline run on the tab where the user clicks the toolbar button or presses the shortcut, and only then. It has no access to any other tab or site. |
-| `scripting` | Injects Swarmline's bundled script (swarmline.js) into that tab to play the build animation over the page. |
+| `activeTab` | Lets Swarmline run on the tab where the user clicks the toolbar button or presses the shortcut, and only then. When that tab shows video, canvas or embedded frames, it takes one screenshot of the visible tab, used only on the device to show those pixels during the animation. It has no access to any other tab or site. |
+| `scripting` | Injects Swarmline's bundled scripts (swarmline.js, and settle.js in the page's own world to finish the page's scroll animations) and a temporary style into that tab to play the build animation. |
 
 **Host permissions:** none requested.
 

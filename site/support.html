@@ -24,17 +24,17 @@
   <ol class="steps">
     <li><b>Install</b> Swarmline from the Chrome Web Store, then pin it from the puzzle-piece menu next to the address bar.</li>
     <li><b>Open any website</b> and click the Swarmline icon (or press <kbd>Alt</kbd> + <kbd>Shift</kbd> + <kbd>L</kbd>).</li>
-    <li><b>Watch, tour, finish:</b> Auto-tour is on by default and <kbd>T</kbd> toggles it, <kbd>F</kbd> shows the finished page, <kbd>H</kbd> hides or shows the controls, <kbd>Esc</kbd> exits. Drag the control bar to move it; double-click it to put it back.</li>
+    <li><b>Watch, tour, go live:</b> Touring is on by default and <kbd>T</kbd> toggles it, <kbd>M</kbd> turns sound on or off, <b>Go live</b> fades back to the real page when it's built, <kbd>H</kbd> hides or shows the controls, <kbd>Esc</kbd> exits. Drag the control bar to move it; double-click it to put it back.</li>
   </ol>
 
   <h2>Common questions</h2>
   <details><summary>The icon shows a red × and nothing happens</summary><p>Chrome doesn't let any extension run on its own pages (<code>chrome://</code> pages, the Chrome Web Store) or inside the built-in PDF viewer. Open a normal website and try again.</p></details>
-  <details><summary>How do I record a video of it?</summary><p>Use any screen recorder (Windows: <kbd>Win</kbd> + <kbd>Alt</kbd> + <kbd>R</kbd>, or the Snipping Tool's record mode; macOS: <kbd>Shift</kbd> + <kbd>Cmd</kbd> + <kbd>5</kbd>). Start Swarmline (Auto-tour is already on), press <kbd>H</kbd> to hide the controls (or drag them to a corner), and pick 2× for a snappy reel or 1× for a calm walkthrough. Press <kbd>H</kbd> again to bring the controls back.</p></details>
-  <details><summary>Can I click the page while it's being built?</summary><p>Not while it's building, so you can't hit a link you can't see yet. You can still scroll, and the swarm builds whatever comes to rest on screen. As soon as it finishes (or you press Finish), the page is fully interactive.</p></details>
-  <details><summary>Does it change or save the website?</summary><p>No. Swarmline only hides and re-shows parts of the page in your own browser tab for the animation. Nothing is saved, nothing is sent anywhere, and when it ends or you exit, the page is exactly as it was. Reloading the page also clears it completely.</p></details>
-  <details><summary>Some part of a page didn't animate, it just appeared</summary><p>Decorative backgrounds and very small details come in with the end-of-screen sweep rather than being built one by one, and content you scroll past quickly simply appears. On very large pages (thousands of elements), the far end is built in bigger pieces.</p></details>
+  <details><summary>How do I record a video of it?</summary><p>Use any screen recorder (Windows: <kbd>Win</kbd> + <kbd>Alt</kbd> + <kbd>R</kbd>, or the Snipping Tool's record mode; macOS: <kbd>Shift</kbd> + <kbd>Cmd</kbd> + <kbd>5</kbd>). Start Swarmline (Touring is already on), press <kbd>H</kbd> to hide the controls (or drag them to a corner), and pick 2× for a snappy reel or 1× for a calm walkthrough. Press <kbd>H</kbd> again to bring the controls back.</p></details>
+  <details><summary>Can I click the page while it's being built?</summary><p>Not while it's building: the rebuild plays on a canvas over the page. You can still scroll (turn Touring off with <kbd>T</kbd> first), and the swarm keeps building what you scroll to. When it's done, press <b>Go live</b> and the real page fades back, fully interactive. <kbd>Esc</kbd> exits at any time.</p></details>
+  <details><summary>Does it change or save the website?</summary><p>No. Swarmline reads the page in your own browser tab and plays the rebuild over it. Nothing is saved, nothing is sent anywhere, and when you go live or exit, the page is exactly as it was. Reloading the page also clears it completely.</p></details>
+  <details><summary>Some part of a page didn't animate, it just appeared</summary><p>Very small details are placed together with the shape they sit in, and on very long pages the rebuild stops at a length limit; everything else appears when you press <b>Go live</b>.</p></details>
   <details><summary>The shortcut doesn't work</summary><p>Another extension may already use <kbd>Alt</kbd> + <kbd>Shift</kbd> + <kbd>L</kbd>. Open <code>chrome://extensions/shortcuts</code> and set a different one for Swarmline.</p></details>
-  <details><summary>Can I make it calmer or faster?</summary><p>Use the 1× / 2× / 3× button in the toolbar at the bottom. If your system is set to reduce motion, Swarmline automatically uses a smaller swarm and a quicker build.</p></details>
+  <details><summary>Can I make it calmer or faster?</summary><p>Use the 1× / 2× / 3× button in the toolbar. If your system is set to reduce motion, Swarmline builds at the fastest speed so the animation is short.</p></details>
 
   <h2>Report a problem</h2>
   <p>Please include the website address, your Chrome version (<code>chrome://version</code>) and what you saw. Email <a href="mailto:{{SUPPORT_EMAIL}}">{{SUPPORT_EMAIL}}</a> or <a href="https://github.com/Tauquirshayaan/swarmline/issues">open an issue</a>.</p>
@@ -42,7 +42,7 @@
 
 <footer class="bottom">
   <div class="wrap">
-    <span>© 2026 Swarmline · MIT licensed</span>
+    <span>© 2026 Swarmline · engine by <a href="https://github.com/DhvanilPatel/swarm-cursors">Dhvanil Patel</a>, after <a href="https://califa.github.io/swarm-site/">Swarm</a> by Joel Califa</span>
     <nav><a href="./">Home</a><a href="privacy.html">Privacy policy</a><a href="https://github.com/Tauquirshayaan/swarmline">GitHub</a></nav>
   </div>
 </footer>

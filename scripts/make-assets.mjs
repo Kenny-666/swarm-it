@@ -79,23 +79,31 @@ try {
   await page.setViewport({ width: 1280, height: 800, deviceScaleFactor: 1 });
   const demo = pathToFileURL(path.join(root, "demo", "index.html")).href;
   const shots = [];
+  // waits: [ms after the swarm starts building, file]; tour off so each shot frames its own screen
   const run = async (scrollY, waits) => {
     await page.goto(demo, { waitUntil: "load" });
     await page.evaluate((y) => window.scrollTo(0, y), scrollY);
     await sleep(600);
+    await page.addScriptTag({ path: path.join(root, "extension", "settle.js") });
     await page.addScriptTag({ path: path.join(root, "extension", "swarmline.js") });
+    await page.waitForFunction(() => window.__swarmline && window.__swarmline.app && window.__swarmline.app.engine && window.__swarmline.app.engine.started, { timeout: 60000 });
+    await page.evaluate(() => {
+      const a = window.__swarmline.app;
+      a.setTour(false);
+      a.view.root.querySelector(".toast") && a.view.root.querySelector(".toast").classList.remove("on");
+    });
     for (const [ms, file] of waits) {
       await sleep(ms);
       const p = path.join(root, "store", file);
       await page.screenshot({ path: p });
       shots.push(p);
     }
-    await page.evaluate(() => window.__swarmline && window.__swarmline.stop(true));
-    await sleep(400);
+    await page.evaluate(() => window.__swarmline && window.__swarmline.stop(false));
+    await sleep(600);
   };
-  await run(0, [[1350, "screenshot-1.png"], [900, "screenshot-2.png"]]);
-  await run(1560, [[2000, "screenshot-3.png"]]);
-  await run(2180, [[1900, "screenshot-4.png"]]);
+  await run(0, [[2200, "screenshot-1.png"], [2600, "screenshot-2.png"]]);
+  await run(1560, [[3000, "screenshot-3.png"]]);
+  await run(2180, [[3400, "screenshot-4.png"]]);
   console.log("screenshots done");
 
   // ---- promo tiles
