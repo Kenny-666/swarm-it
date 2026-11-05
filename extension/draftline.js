@@ -1,8 +1,9 @@
 /*
  * Draftline: watch any web page draw itself as a blueprint.
  *
- * A blueprint sheet is laid over the live page. Elements are outlined and
- * dimensioned in reading order, then the sheet opens over each one, so what
+ * A blueprint sheet is laid over the live page. A swarm of glowing pen-nibs
+ * flies from element to element, tracing outlines and writing text lines in
+ * reading order, and the sheet opens over each finished one, so what
  * appears is the real page itself: its fonts, animations, video, canvases and
  * interactivity are all intact. When the last sheet is drawn the blueprint
  * lifts away and the page is live again.
@@ -235,7 +236,7 @@
           u.tall = r.height > v.h * 0.9;
           if (r.width * r.height > 9000) u.label = labelFor(el, kind, r.width, r.height);
         }
-        if (kind === "media" && r.width * r.height > 2400) u.label = labelFor(el, kind, r.width, r.height);
+        if (kind === "media" && r.width * r.height > 6000) u.label = labelFor(el, kind, r.width, r.height);
         for (let a = parent; a && u.label; a = a.parent) {
           if (a.label && Math.abs(a.top0 - r.top) < 26 && Math.abs(a.left0 - r.left) < 120) u.label = "";
           if (Math.abs(a.top0 - r.top) >= 26) break;
@@ -392,8 +393,12 @@ canvas.off{pointer-events:none;display:none}
       this.dwell = 0;
       this.focus = null;
       this.startedAt = performance.now();
+      this.nibs = [];
+      this.anchor = null;
+      this.dt = 0;
       this.mount();
       this.scanner = new Scanner(this.env, this.host);
+      this.makeNibs();
       this.bind();
       this.last = performance.now();
       this.raf = requestAnimationFrame((t) => this.frame(t));
@@ -570,6 +575,7 @@ canvas.off{pointer-events:none;display:none}
 
     finishUnit(u, silent) {
       if (u.state === 2) return;
+      this.release(u);
       u.state = 2;
       u.p = 1;
       this.done++;
@@ -626,10 +632,13 @@ canvas.off{pointer-events:none;display:none}
 
     update(dt) {
       this.time += dt;
+      this.dt = dt;
       const env = this.env;
       const v = env.view();
       const top = env.top;
       const sdt = dt * this.speed;
+      // work waits (briefly) for its nib to arrive, so the swarm visibly does the drawing
+      const ready = (u) => !u.lead || u.lead.attached || (u.waitT = (u.waitT || 0) + sdt) > 0.6;
 
       // how fast the page is moving: new work waits until it comes to rest
       const moved = this.lastTop == null ? 0 : Math.abs(top - this.lastTop);
@@ -703,6 +712,7 @@ canvas.off{pointer-events:none;display:none}
           u.state = 1;
           u.phase = 0;
           u.p = 0;
+          this.crew(u);
           this.active.push(u);
           if (u.kind !== "text" || u.fs >= 26) this.focus = u;
           busy++;
@@ -715,10 +725,11 @@ canvas.off{pointer-events:none;display:none}
         if (u.state !== 1) continue;
         if (u.kind === "box") {
           if (u.phase === 0) {
-            u.p += sdt / 0.45;
+            if (ready(u)) u.p += sdt / 0.45;
             if (u.p >= 1) {
               u.phase = 1;
               u.p = 0;
+              this.release(u); // outline done: the crew moves on while the children fill in
             }
           } else if (u.phase === 1) {
             if (u.tall) this.finishUnit(u);
@@ -729,7 +740,7 @@ canvas.off{pointer-events:none;display:none}
           }
         } else if (u.kind === "text") {
           if (u.phase === 0) {
-            u.p += sdt / 0.16;
+            if (ready(u)) u.p += sdt / 0.16;
             if (u.p >= 1) {
               u.phase = 1;
               u.line = 0;
@@ -748,7 +759,7 @@ canvas.off{pointer-events:none;display:none}
           const outline = u.kind === "glyph" ? 0.28 : 0.36;
           const fill = u.kind === "media" ? 0.6 : u.kind === "control" ? 0.38 : 0;
           if (u.phase === 0) {
-            u.p += sdt / outline;
+            if (ready(u)) u.p += sdt / outline;
             if (u.p >= 1) {
               if (!fill) this.finishUnit(u);
               else {
@@ -823,6 +834,211 @@ canvas.off{pointer-events:none;display:none}
       this.updateHud(true);
     }
 
+    // ------------------------------------------------------------ the swarm
+
+    makeNibs() {
+      const n = reduced() ? 6 : 14;
+      for (let i = 0; i < n; i++) {
+        const a = (i / n) * Math.PI * 2;
+        this.nibs.push({
+          i, unit: null, role: 0, attached: false, vis: 0,
+          x: this.W / 2 + Math.cos(a) * 6, y: this.H / 2 + Math.sin(a) * 6,
+          vx: Math.cos(a) * 900, vy: Math.sin(a) * 900, ang: a,
+          trail: [], seed: Math.random() * Math.PI * 2, born: 0.45 + i * 0.025,
+        });
+      }
+    }
+
+    // send the nearest free nibs to a unit: one for small things, a crew for big ones
+    crew(u) {
+      const want = u.kind === "glyph" || u.kind === "control" ? 1 : u.kind === "text" ? (u.lines.length > 1 ? 2 : 1) : u.w * u.h > 60000 ? 3 : 2;
+      const free = this.nibs.filter((n) => !n.unit);
+      if (!free.length) return;
+      const r = u.el.getBoundingClientRect();
+      const d = (n) => Math.hypot(n.x - r.left, n.y - r.top);
+      free.sort((a, b) => d(a) - d(b));
+      for (let k = 0; k < want && k < free.length; k++) {
+        free[k].unit = u;
+        free[k].role = k;
+        free[k].attached = false;
+      }
+      u.lead = free[0];
+      u.waitT = 0;
+    }
+
+    release(u) {
+      if (!u.lead) return;
+      for (const n of this.nibs) {
+        if (n.unit !== u) continue;
+        n.unit = null;
+        n.attached = false;
+      }
+      u.lead = null;
+    }
+
+    // a point on a box's outline, clockwise from the top-left corner (where the stroke starts)
+    perim(R, t) {
+      const { x, y, w, h } = R;
+      let d = (((t % 1) + 1) % 1) * 2 * (w + h);
+      if (d < w) return [x + d, y];
+      d -= w;
+      if (d < h) return [x + w, y + d];
+      d -= h;
+      if (d < w) return [x + w - d, y + h];
+      d -= w;
+      return [x, y + h - d];
+    }
+
+    // where a working nib should be: the head of the stroke, the text cursor, the scan line
+    workPoint(n, u, R) {
+      const k = clamp(u.p, 0, 1);
+      if (u.kind === "box" || ((u.kind === "media" || u.kind === "control") && u.phase === 0)) {
+        const e = u.phase === 0 ? easeInOut(k) : 1;
+        return this.perim(R, e - n.role * 0.07);
+      }
+      if (u.kind === "text") {
+        const L = u.lines[Math.min(u.line, u.lines.length - 1)];
+        if (u.phase === 0 || !L) return [R.x + (L ? L.x : 0), R.y + (L ? L.y + L.h / 2 : 0)];
+        if (n.role === 0) return [R.x + L.x - 3 + (L.w + 6) * easeOut(clamp(u.lp, 0, 1)), R.y + L.y + L.h * 0.5];
+        const N = u.lines[u.line + 1] || L; // a helper waits at the start of the next line
+        return [R.x + N.x - 4, R.y + N.y + N.h / 2];
+      }
+      if (u.kind === "glyph") {
+        const a = this.time * 7 + n.role * 2.1;
+        const rr = Math.hypot(R.w, R.h) / 2 + 5;
+        return [R.x + R.w / 2 + Math.cos(a) * rr, R.y + R.h / 2 + Math.sin(a) * rr];
+      }
+      const c = easeInOut(k);
+      if (u.kind === "control") return [R.x + R.w * c, R.y + R.h * (0.3 + 0.4 * (n.role % 2))];
+      return [R.x + R.w * [0.1, 0.9, 0.5][n.role % 3], R.y + R.h * c];
+    }
+
+    swarm(g, rects, v, alpha) {
+      const dt = this.dt;
+      const W = this.W;
+      const H = this.H;
+      // the idle cloud gathers near the latest work, or the middle of the screen
+      const fr = this.focus && rects.get(this.focus);
+      const want = fr ? [fr.x + fr.w / 2, fr.y + Math.min(fr.h, 160) / 2] : [W / 2, H * 0.45];
+      if (!this.anchor) this.anchor = want.slice();
+      const ak = 1 - Math.exp(-dt * 2.2);
+      this.anchor[0] += (want[0] - this.anchor[0]) * ak;
+      this.anchor[1] += (want[1] - this.anchor[1]) * ak;
+      let sweepY = null;
+      if (this.sweep) {
+        const top = this.env.top;
+        const y0 = this.sweep.top - top + v.y;
+        sweepY = y0 + (this.sweep.bottom - top + v.y - y0) * easeInOut(clamp(this.sweep.p, 0, 1));
+      }
+      const free = this.nibs.filter((n) => !n.unit || !rects.get(n.unit));
+      for (const n of this.nibs) {
+        n.vis = this.time < n.born ? 0 : Math.min(1, n.vis + dt / 0.35);
+        let tx;
+        let ty;
+        let stick = false;
+        const R = n.unit && rects.get(n.unit);
+        if (this.outro) {
+          // the swarm disperses as the blueprint lifts
+          const a = Math.atan2(n.y - H / 2, n.x - W / 2) || n.seed;
+          tx = n.x + Math.cos(a) * 900;
+          ty = n.y + Math.sin(a) * 900;
+        } else if (R) {
+          [tx, ty] = this.workPoint(n, n.unit, R);
+          if (!n.attached && Math.hypot(tx - n.x, ty - n.y) < 14) n.attached = true;
+          stick = n.attached;
+        } else if (sweepY != null) {
+          // ride the sweep line across the screen
+          const j = free.indexOf(n);
+          tx = v.x + (v.w * (j + 0.5)) / Math.max(1, free.length);
+          ty = sweepY;
+        } else {
+          const j = free.indexOf(n);
+          const a = n.seed + this.time * (0.55 + (j % 3) * 0.12) * (j % 2 ? 1 : -1);
+          const rr = 34 + (j % 5) * 15;
+          tx = this.anchor[0] + Math.cos(a) * rr;
+          ty = this.anchor[1] + Math.sin(a) * rr * 0.62;
+        }
+        if (stick) {
+          const k = 1 - Math.exp(-dt * 38);
+          const nx = n.x + (tx - n.x) * k;
+          const ny = n.y + (ty - n.y) * k;
+          n.vx = (nx - n.x) / Math.max(dt, 1e-3);
+          n.vy = (ny - n.y) / Math.max(dt, 1e-3);
+          n.x = nx;
+          n.y = ny;
+        } else {
+          // steer: arrive at the target, keeping a little space from neighbours
+          const dx = tx - n.x;
+          const dy = ty - n.y;
+          const d = Math.hypot(dx, dy) || 1;
+          const sp = Math.min(2600, d * 9);
+          let ax = (dx / d) * sp - n.vx;
+          let ay = (dy / d) * sp - n.vy;
+          for (const m of this.nibs) {
+            if (m === n) continue;
+            const ex = n.x - m.x;
+            const ey = n.y - m.y;
+            const e = ex * ex + ey * ey;
+            if (e < 196 && e > 0.01) {
+              ax += (ex / Math.sqrt(e)) * 900;
+              ay += (ey / Math.sqrt(e)) * 900;
+            }
+          }
+          const am = Math.hypot(ax, ay) || 1;
+          const step = Math.min(11000 * dt, am);
+          n.vx += (ax / am) * step;
+          n.vy += (ay / am) * step;
+          n.x += n.vx * dt;
+          n.y += n.vy * dt;
+        }
+        if (Math.hypot(n.vx, n.vy) > 40) n.ang = Math.atan2(n.vy, n.vx);
+        n.trail.push(n.x, n.y);
+        if (n.trail.length > 28) n.trail.splice(0, 2);
+      }
+      // trails, then the nibs themselves
+      const fade = this.outro ? 1 - easeInOut(this.outro.t) : 1;
+      g.lineCap = "round";
+      g.strokeStyle = C.line;
+      for (const n of this.nibs) {
+        const a = alpha * n.vis * fade;
+        if (a < 0.02) continue;
+        const T = n.trail;
+        const segs = T.length / 2;
+        for (let i = 1; i < segs; i++) {
+          const f = i / segs;
+          g.globalAlpha = a * f * 0.5;
+          g.lineWidth = 0.5 + 1.8 * f;
+          g.beginPath();
+          g.moveTo(T[i * 2 - 2], T[i * 2 - 1]);
+          g.lineTo(T[i * 2], T[i * 2 + 1]);
+          g.stroke();
+        }
+      }
+      g.shadowColor = C.line;
+      g.shadowBlur = 10;
+      g.fillStyle = "#EAFBFF";
+      for (const n of this.nibs) {
+        const a = alpha * n.vis * fade;
+        if (a < 0.02) continue;
+        g.globalAlpha = a;
+        g.save();
+        g.translate(n.x, n.y);
+        g.rotate(n.ang);
+        g.beginPath();
+        g.moveTo(5.5, 0);
+        g.lineTo(-3.2, -2.8);
+        g.lineTo(-1.4, 0);
+        g.lineTo(-3.2, 2.8);
+        g.closePath();
+        g.fill();
+        g.restore();
+      }
+      g.shadowBlur = 0;
+      g.globalAlpha = 1;
+      g.lineWidth = 1;
+      g.lineCap = "butt";
+    }
+
     // ------------------------------------------------------------ drawing
 
     draw() {
@@ -856,7 +1072,10 @@ canvas.off{pointer-events:none;display:none}
       g.fillRect(-50, -50, W + 100, H + 100);
       g.restore();
       g.globalAlpha = 1;
-      if (this.intro < 1 && !this.units.length) return;
+      if (this.intro < 1 && !this.units.length) {
+        this.swarm(g, new Map(), v, sheetA); // the nibs burst out of the centre as the grid draws in
+        return;
+      }
 
       // ---- openings onto the real page
       g.globalCompositeOperation = "destination-out";
@@ -922,6 +1141,7 @@ canvas.off{pointer-events:none;display:none}
         const f = this.focus;
         this.guides(g, focusR, f.phase === 0 ? easeOut(clamp(f.p * 1.6, 0, 1)) : 1);
       }
+      this.swarm(g, rects, v, sheetA);
       this.rulers(g, v, top, focusR, sheetA);
     }
 

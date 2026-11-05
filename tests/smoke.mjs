@@ -47,7 +47,7 @@ try {
   let lastNav = Date.now();
   page.on("framenavigated", (f) => f === page.mainFrame() && (lastNav = Date.now()));
   await page.goto(url, { waitUntil: "networkidle2", timeout: 90000 });
-  while (Date.now() - lastNav < 3500) await sleep(250); // some sites reload themselves once
+  while (Date.now() - lastNav < 6000) await sleep(250); // some sites reload themselves once
   await page.waitForNetworkIdle({ idleTime: 500, timeout: 20000 }).catch(() => {});
   await sleep(1500);
   await page.screenshot({ path: path.join(out, "00-live.png") });
