@@ -19,23 +19,44 @@ const chromePath =
   process.env.CHROME_PATH ||
   ["C:/Program Files/Google/Chrome/Application/chrome.exe", "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome", "/usr/bin/google-chrome"].find((p) => fs.existsSync(p));
 
-// The mark: a page being built, with two swarm comets sweeping around it.
+// The mark: a browser window whose outline is still being drawn, with the pointer
+// at the end of the line it is drawing, a typed headline and a caret. Simplified
+// at 32px and 16px so it stays crisp in the toolbar.
 function iconSVG(size, { pad = 0 } = {}) {
-  const detail = size >= 32;
+  const tiny = size <= 16;
+  const small = size <= 32;
+  // the pointer: classic arrow, tip at (0,0), pointing up-left
+  const ptr = "M0 0 L0 30 L7.6 23.2 L12.6 34.4 L18.4 31.8 L13.4 20.8 L23.4 20.6 Z";
+  // a window being drawn: the outline runs clockwise and stops where the pointer is
+  const frame = tiny
+    ? "M82 54 V42 a12 12 0 0 0 -12 -12 H32 a12 12 0 0 0 -12 12 V84 a12 12 0 0 0 12 12 H56"
+    : "M86 56 V44 a12 12 0 0 0 -12 -12 H32 a12 12 0 0 0 -12 12 V84 a12 12 0 0 0 12 12 H62";
+  const pt = tiny ? { x: 76, y: 58, s: 1.5, w: 4 } : small ? { x: 82, y: 60, s: 1.12, w: 3 } : { x: 83, y: 60, s: 1, w: 2.6 };
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="${-pad} ${-pad} ${128 + pad * 2} ${128 + pad * 2}">
   <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#20222E"/><stop offset="1" stop-color="#0C0D13"/></linearGradient>
-    <linearGradient id="t1" x1="0" y1="1" x2="1" y2="0"><stop offset="0" stop-color="#FF5A6E" stop-opacity="0"/><stop offset=".55" stop-color="#FF5A6E"/><stop offset="1" stop-color="#FFB020"/></linearGradient>
-    <linearGradient id="t2" x1="1" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#3D9BFF" stop-opacity="0"/><stop offset=".6" stop-color="#A46BFF"/><stop offset="1" stop-color="#3D9BFF"/></linearGradient>
+    <linearGradient id="sw-bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#FF5470"/><stop offset=".52" stop-color="#9B4DFF"/><stop offset="1" stop-color="#2E6BFF"/>
+    </linearGradient>
+    <linearGradient id="sw-sheen" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fff" stop-opacity=".2"/><stop offset=".55" stop-color="#fff" stop-opacity="0"/>
+    </linearGradient>
+    <filter id="sw-sh" x="-30%" y="-30%" width="160%" height="160%"><feDropShadow dx="0" dy="${small ? 1.5 : 2.5}" stdDeviation="${small ? 1.4 : 2.6}" flood-color="#1A0B3D" flood-opacity=".4"/></filter>
   </defs>
-  <rect width="128" height="128" rx="28" fill="url(#bg)"/>
-  <rect x="36" y="30" width="56" height="66" rx="9" fill="none" stroke="#F4F5F8" stroke-width="${detail ? 6 : 9}"/>
-  ${detail ? `<path d="M47 52H81M47 65H73" stroke="#F4F5F8" stroke-opacity=".55" stroke-width="6" stroke-linecap="round"/>
-  <path d="M47 78H61" stroke="#19D3A2" stroke-width="6" stroke-linecap="round"/>` : ""}
-  <path d="M14 110C34 104 58 112 88 100C100 95 108 88 113 80" fill="none" stroke="url(#t1)" stroke-width="${detail ? 7 : 11}" stroke-linecap="round"/>
-  <circle cx="113" cy="80" r="${detail ? 6 : 9}" fill="#FFB020"/>
-  ${detail ? `<path d="M112 20C100 24 84 20 68 18C56 17 44 20 34 24" fill="none" stroke="url(#t2)" stroke-width="6" stroke-linecap="round"/>
-  <circle cx="33" cy="24.5" r="5" fill="#3D9BFF"/>` : ""}
+  <rect width="128" height="128" rx="30" fill="url(#sw-bg)"/>
+  <rect width="128" height="128" rx="30" fill="url(#sw-sheen)"/>
+  <rect x="1" y="1" width="126" height="126" rx="29" fill="none" stroke="#fff" stroke-opacity=".14" stroke-width="2"/>
+  <g filter="url(#sw-sh)">
+    <path d="${frame}" fill="none" stroke="#fff" stroke-width="${tiny ? 14 : small ? 10.5 : 8.5}" stroke-linecap="round" stroke-linejoin="round"/>
+    ${small ? "" : `<path d="M20 49 H86" stroke="#fff" stroke-opacity=".5" stroke-width="4.5"/>
+    <circle cx="31" cy="40.5" r="2.6" fill="#fff"/><circle cx="39" cy="40.5" r="2.6" fill="#fff" fill-opacity=".7"/><circle cx="47" cy="40.5" r="2.6" fill="#fff" fill-opacity=".45"/>
+    <path d="M33 65 H68" stroke="#fff" stroke-width="7.5" stroke-linecap="round"/>
+    <path d="M33 81 H51" stroke="#fff" stroke-opacity=".6" stroke-width="7.5" stroke-linecap="round"/>
+    <path d="M59 74 V88" stroke="#FFC94D" stroke-width="4" stroke-linecap="round"/>`}
+    ${small && !tiny ? `<path d="M35 62 H64" stroke="#fff" stroke-width="9" stroke-linecap="round"/>` : ""}
+    <g transform="translate(${pt.x} ${pt.y}) scale(${pt.s})">
+      <path d="${ptr}" fill="#fff" stroke="#24104F" stroke-width="${pt.w}" stroke-linejoin="round"/>
+    </g>
+  </g>
 </svg>`;
 }
 
@@ -82,10 +103,11 @@ try {
   const icon = "data:image/svg+xml;base64," + Buffer.from(iconSVG(128)).toString("base64");
   const tile = (w, h, big) => `<html><head><style>
     *{box-sizing:border-box}
-    body{margin:0;width:${w}px;height:${h}px;overflow:hidden;font-family:Inter,ui-sans-serif,system-ui,"Segoe UI",sans-serif;color:#fff;
+    html{overflow:hidden}
+    body{position:relative;margin:0;width:${w}px;height:${h}px;overflow:hidden;font-family:Inter,ui-sans-serif,system-ui,"Segoe UI",sans-serif;color:#fff;
       background:radial-gradient(90% 120% at 18% 30%,#2a1f45 0%,#14151c 55%,#0b0c11 100%)}
     .glow{position:absolute;width:${big ? 700 : 260}px;height:${big ? 700 : 260}px;border-radius:50%;filter:blur(${big ? 90 : 40}px);opacity:.35}
-    .copy{position:absolute;left:${big ? 84 : 24}px;top:${big ? 158 : 40}px;width:${big ? 540 : 220}px}
+    .copy{position:absolute;left:${big ? 84 : 24}px;top:${big ? 158 : 40}px;width:${big ? 540 : 196}px;z-index:1}
     .brand{display:flex;align-items:center;gap:${big ? 16 : 10}px;font-weight:800;letter-spacing:-.02em;font-size:${big ? 50 : 27}px}
     .brand img{width:${big ? 66 : 38}px;height:${big ? 66 : 38}px}
     p{margin:${big ? 20 : 11}px 0 0;color:#D6D8E4;font-size:${big ? 25 : 14}px;line-height:1.35}
@@ -104,7 +126,8 @@ try {
     await page.setViewport({ width: w, height: h, deviceScaleFactor: 1 });
     await page.setContent(tile(w, h, big), { waitUntil: "load" });
     await sleep(200);
-    await page.screenshot({ path: path.join(root, "store", file) });
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await page.screenshot({ path: path.join(root, "store", file), clip: { x: 0, y: 0, width: w, height: h }, captureBeyondViewport: false });
   }
   console.log("promo tiles done");
 
