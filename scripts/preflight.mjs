@@ -102,7 +102,7 @@ const img = (f, w, h) => {
   check(s && s[0] === w && s[1] === h, `${f} ${w}×${h}`, `${f}: missing or ${s ? s.join("×") : "not a PNG"} (needs ${w}×${h})`);
 };
 img("store-icon-128.png", 128, 128);
-for (let i = 1; i <= 4; i++) img(`screenshot-${i}.png`, 1280, 800);
+for (let i = 1; i <= 5; i++) img(`screenshot-${i}.png`, 1280, 800);
 img("promo-440x280.png", 440, 280);
 img("marquee-1400x560.png", 1400, 560);
 

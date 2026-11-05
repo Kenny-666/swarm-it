@@ -2,7 +2,7 @@
 //   extension/icons/icon{16,32,48,128}.png   toolbar + extension icons
 //   store/store-icon-128.png                  store icon (96px artwork, 16px clear margin)
 //   store/icon.svg                            the mark, as vector
-//   store/screenshot-{1,2,3,4}.png           1280×800, Swarmline building the demo page
+//   store/screenshot-{1..5}.png              1280×800, captioned moments of Swarmline building the demo page
 //   store/promo-440x280.png                   small promo tile
 //   store/marquee-1400x560.png                marquee promo tile
 //   site/assets/*                              copies for the website
@@ -75,52 +75,111 @@ try {
   fs.writeFileSync(path.join(root, "store", "icon.svg"), iconSVG(128));
   console.log("icons done");
 
-  // ---- screenshots: Swarmline building the (fictional) demo page
-  await page.setViewport({ width: 1280, height: 800, deviceScaleFactor: 1 });
+  // ---- screenshots: real moments of Swarmline building the (fictional) demo page,
+  // captured the instant each one happens, then framed with a caption (1280×800)
   const demo = pathToFileURL(path.join(root, "demo", "index.html")).href;
-  const shots = [];
-  const run = async (scrollY, waits) => {
+  const raw = path.join(root, "store", "raw");
+  fs.mkdirSync(raw, { recursive: true });
+  const capture = async (name, scrollSel, cond, after) => {
+    await page.setViewport({ width: 1440, height: 900, deviceScaleFactor: 1 });
     await page.goto(demo, { waitUntil: "load" });
-    await page.evaluate((y) => window.scrollTo(0, y), scrollY);
+    await page.evaluate((sel) => {
+      const el = sel && document.querySelector(sel);
+      window.scrollTo(0, el ? el.getBoundingClientRect().top + scrollY - 60 : 0);
+    }, scrollSel);
     await sleep(600);
     await page.addScriptTag({ path: path.join(root, "extension", "swarmline.js") });
-    for (const [ms, file] of waits) {
-      await sleep(ms);
-      const p = path.join(root, "store", file);
-      await page.screenshot({ path: p });
-      shots.push(p);
+    await page.waitForFunction(() => window.__swarmline && window.__swarmline.app);
+    await page.evaluate(() => {
+      const a = window.__swarmline.app;
+      a.setTour(false);
+      if (a.sfx) a.sfx.setOn(false);
+    });
+    const t0 = Date.now();
+    for (;;) {
+      const hit = await page.evaluate(`(() => { const a = window.__swarmline.app; return !!a && (${cond})(a); })()`);
+      if (hit || Date.now() - t0 > 20000) break;
+      await sleep(15);
     }
+    if (after) await after();
+    const file = path.join(raw, name + ".png");
+    await page.screenshot({ path: file });
     await page.evaluate(() => window.__swarmline && window.__swarmline.stop(true));
-    await sleep(400);
+    await sleep(300);
+    return file;
   };
-  await run(0, [[1050, "screenshot-1.png"], [450, "screenshot-2.png"]]);
-  await run(1560, [[1250, "screenshot-3.png"]]);
-  await run(2180, [[1250, "screenshot-4.png"]]);
+  const draw = await capture("draw", null, "(a) => a.done >= 10 && a.active.filter((u) => u.step === 2 && (u.kind === 'box' || u.kind === 'media')).length >= 2");
+  const dup = await capture("duplicate", ".grid3", "(a) => a.active.some((u) => u.kind === 'dup' && u.step === 3 && u.el.classList.contains('card') && u.lead && u.lead.mv && u.lead.mv.t > u.lead.mv.dur * 0.5)");
+  const edit = await capture("edit", ".grid3", "(a) => a.active.some((u) => u.kind === 'text' && u.edit && u.step === 11 && u.inCopy && u.inCopy.el.classList.contains('card'))");
+  const snap = await capture("snap", null, "(a) => a.active.some((u) => u.kind === 'text' && u.step === 21)");
+  const live = await capture("live", null, "(a) => a.done > 30", async () => {
+    await page.keyboard.press("f");
+    await sleep(700);
+    for (let t = 0; t <= 1; t += 0.05) {
+      await page.mouse.move(980 + 120 * Math.cos(t * 4), 430 + 90 * Math.sin(t * 4));
+      await sleep(30);
+    }
+    await sleep(900);
+  });
+
+  const b64 = (p) => "data:image/png;base64," + fs.readFileSync(p).toString("base64");
+  const icon = "data:image/svg+xml;base64," + Buffer.from(iconSVG(128)).toString("base64");
+  const FONT = 'Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif';
+  const framed = (img, title, sub) => `<html><head><style>
+    *{box-sizing:border-box}html,body{margin:0;overflow:hidden}
+    body{width:1280px;height:800px;position:relative;font-family:${FONT};color:#fff;
+      background:radial-gradient(70% 90% at 10% 0%,#2b1d48 0%,rgba(43,29,72,0) 60%),radial-gradient(60% 80% at 100% 10%,#14275a 0%,rgba(20,39,90,0) 60%),#0d0e15}
+    .cap{position:absolute;left:100px;top:46px;right:100px;display:flex;align-items:flex-start;justify-content:space-between}
+    h1{margin:0;font-size:38px;line-height:1.08;font-weight:800;letter-spacing:-.02em}
+    p{margin:10px 0 0;font-size:18px;line-height:1.4;color:#C9CDDA;max-width:760px}
+    .brand{display:flex;align-items:center;gap:10px;font-weight:750;font-size:18px;color:#E9EBF2;margin-top:6px}
+    .brand img{width:30px;height:30px}
+    .win{position:absolute;left:100px;top:182px;width:1080px;height:700px;border-radius:14px;overflow:hidden;background:#fff;
+      box-shadow:0 40px 90px rgba(0,0,0,.55),0 0 0 1px rgba(255,255,255,.1)}
+    .bar{height:36px;background:#1c1e29;display:flex;align-items:center;gap:8px;padding:0 14px}
+    .bar i{width:11px;height:11px;border-radius:50%;display:block}
+    .url{margin-left:14px;height:22px;flex:0 0 360px;border-radius:7px;background:#2a2d3b;color:#9aa1b4;font-size:12px;display:flex;align-items:center;padding:0 10px}
+    .win img{display:block;width:1080px;height:675px}
+  </style></head><body>
+    <div class="cap"><div><h1>${title}</h1><p>${sub}</p></div><div class="brand"><img src="${icon}">Swarmline</div></div>
+    <div class="win"><div class="bar"><i style="background:#ff5f57"></i><i style="background:#febc2e"></i><i style="background:#28c840"></i><div class="url">fernbrook.studio</div></div><img src="${b64(img)}"></div>
+  </body></html>`;
+  const shots = [
+    [draw, "Every box drawn by hand", "A swarm of cursors drags out each section with live sizes, rulers and guides, then it fills in for real."],
+    [dup, "Build one. Duplicate the rest.", "Cards, rows and links are Alt-dragged as copies, with the spacing measured, like a designer would."],
+    [edit, "Then change the details", "Each copy's words are selected and retyped, and a different image or colour is swapped in."],
+    [snap, "Typed, then snapped into place", "Text is typed letter by letter and nudged onto an alignment guide until it snaps."],
+    [live, "Live again in seconds", "When it's done the page is fully live, and the swarm follows your cursor. Hide the controls with H to record."],
+  ];
+  for (const [i, [img, title, sub]] of shots.entries()) {
+    await page.setViewport({ width: 1280, height: 800, deviceScaleFactor: 1 });
+    await page.setContent(framed(img, title, sub), { waitUntil: "load" });
+    await sleep(150);
+    await page.screenshot({ path: path.join(root, "store", `screenshot-${i + 1}.png`), clip: { x: 0, y: 0, width: 1280, height: 800 }, captureBeyondViewport: false });
+  }
   console.log("screenshots done");
 
   // ---- promo tiles
-  const b64 = (p) => "data:image/png;base64," + fs.readFileSync(p).toString("base64");
-  const icon = "data:image/svg+xml;base64," + Buffer.from(iconSVG(128)).toString("base64");
   const tile = (w, h, big) => `<html><head><style>
     *{box-sizing:border-box}
     html{overflow:hidden}
-    body{position:relative;margin:0;width:${w}px;height:${h}px;overflow:hidden;font-family:Inter,ui-sans-serif,system-ui,"Segoe UI",sans-serif;color:#fff;
+    body{position:relative;margin:0;width:${w}px;height:${h}px;overflow:hidden;font-family:${FONT};color:#fff;
       background:radial-gradient(90% 120% at 18% 30%,#2a1f45 0%,#14151c 55%,#0b0c11 100%)}
     .glow{position:absolute;width:${big ? 700 : 260}px;height:${big ? 700 : 260}px;border-radius:50%;filter:blur(${big ? 90 : 40}px);opacity:.35}
-    .copy{position:absolute;left:${big ? 84 : 24}px;top:${big ? 158 : 40}px;width:${big ? 540 : 196}px;z-index:1}
+    .copy{position:absolute;left:${big ? 84 : 24}px;top:${big ? 150 : 40}px;width:${big ? 560 : 196}px;z-index:1}
     .brand{display:flex;align-items:center;gap:${big ? 16 : 10}px;font-weight:800;letter-spacing:-.02em;font-size:${big ? 50 : 27}px}
     .brand img{width:${big ? 66 : 38}px;height:${big ? 66 : 38}px}
     p{margin:${big ? 20 : 11}px 0 0;color:#D6D8E4;font-size:${big ? 25 : 14}px;line-height:1.35}
     .k{display:flex;gap:${big ? 10 : 6}px;margin-top:${big ? 24 : 13}px;flex-wrap:wrap}
-    .k span{font:650 ${big ? 13 : 9}px Inter,system-ui,sans-serif;padding:${big ? "6px 10px" : "3px 6px"};border-radius:6px;color:#fff}
+    .k span{font:650 ${big ? 13 : 9}px ${FONT};padding:${big ? "6px 10px" : "3px 6px"};border-radius:6px;color:#fff}
     .shot{position:absolute;right:${big ? -30 : -80}px;top:${big ? 64 : 46}px;width:${big ? 780 : 300}px;border-radius:${big ? 14 : 8}px;box-shadow:0 30px 80px rgba(0,0,0,.6),0 0 0 1px rgba(255,255,255,.12);transform:perspective(1400px) rotateY(-11deg) rotateX(3deg)}
   </style></head><body>
     <div class="glow" style="left:-120px;top:-160px;background:#FF5A6E"></div>
     <div class="glow" style="left:${big ? 380 : 140}px;top:${big ? 260 : 120}px;background:#3D9BFF"></div>
-    <img class="shot" src="${b64(shots[1])}">
+    <img class="shot" src="${b64(big ? dup : draw)}">
     <div class="copy"><div class="brand"><img src="${icon}">Swarmline</div>
-      <p>Watch a swarm build any website, live in your browser.</p>
-      <div class="k"><span style="background:#FF5A6E">Trace</span><span style="background:#A46BFF">Type</span><span style="background:#3D9BFF">Reveal</span></div></div>
+      <p>Watch a swarm of cursors build any website, live in your browser.</p>
+      <div class="k"><span style="background:#FF5A6E">Draw</span><span style="background:#A46BFF">Type</span><span style="background:#3D9BFF">Duplicate</span></div></div>
   </body></html>`;
   for (const [w, h, big, file] of [[440, 280, false, "promo-440x280.png"], [1400, 560, true, "marquee-1400x560.png"]]) {
     await page.setViewport({ width: w, height: h, deviceScaleFactor: 1 });
@@ -134,8 +193,9 @@ try {
   // ---- website copies
   const sa = path.join(root, "site", "assets");
   fs.mkdirSync(sa, { recursive: true });
-  for (const f of ["icon.svg", "store-icon-128.png", "screenshot-1.png", "screenshot-2.png", "screenshot-3.png", "screenshot-4.png", "marquee-1400x560.png"]) fs.copyFileSync(path.join(root, "store", f), path.join(sa, f));
+  for (const f of ["icon.svg", "store-icon-128.png", "screenshot-1.png", "screenshot-2.png", "screenshot-3.png", "screenshot-4.png", "screenshot-5.png", "marquee-1400x560.png"]) fs.copyFileSync(path.join(root, "store", f), path.join(sa, f));
   await shootSVG(iconSVG(32), 32, path.join(sa, "favicon-32.png"));
+  fs.copyFileSync(dup, path.join(sa, "hero.png")); // the website hero: a duplicate being dragged
   console.log("site assets done");
 } finally {
   await browser.close();

@@ -60,6 +60,7 @@ h2 { font-size: clamp(28px, 4vw, 40px); letter-spacing: -0.03em; line-height: 1.
 .card p { margin: 0; color: var(--muted); font-size: 15px; }
 .gallery { display: grid; grid-template-columns: repeat(2, 1fr); gap: 18px; }
 .gallery img { border-radius: 14px; box-shadow: 0 0 0 1px var(--line); }
+.gallery img:last-child:nth-child(odd) { grid-column: 1 / -1; }
 .steps { counter-reset: s; display: grid; gap: 14px; padding: 0; list-style: none; max-width: 760px; }
 .steps li { counter-increment: s; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px 18px 16px 60px; position: relative; color: var(--muted); }
 .steps li::before { content: counter(s); position: absolute; left: 18px; top: 14px; width: 28px; height: 28px; border-radius: 8px; background: var(--grad); color: #fff; font-weight: 700; display: grid; place-items: center; font-size: 14px; }

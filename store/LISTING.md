@@ -15,7 +15,7 @@ Upload `dist/swarmline-1.0.0.zip` (build it with `npm run package`).
 | Field | Value |
 | --- | --- |
 | **Title** (from the manifest) | Swarmline – Watch Any Website Build Itself |
-| **Summary** (from the manifest, 113 / 132 characters) | One click and a swarm builds any website live: boxes traced, text typed, images scanned in, then it’s live again. |
+| **Summary** (from the manifest) | One click and a swarm of cursors builds any website live: boxes drawn, text typed, parts duplicated, then it’s live again. |
 | **Category** | Developer Tools |
 | **Language** | English |
 
@@ -24,22 +24,24 @@ Upload `dist/swarmline-1.0.0.zip` (build it with `npm run package`).
 Paste this as-is:
 
 ```
-One click and any website becomes a blank canvas. Then a swarm builds it back, live, right in front of you.
+One click and any website becomes a blank canvas. Then a swarm of cursors builds it back, live, right in front of you, the way designers work in a design tool.
 
-Swarmline sends a swarm of cursors across the page, working the way designers do in a design tool, in reading order:
-
-• Boxes, cards and sections are dragged out with a crosshair, with a live size readout and selection handles, then fill in for real
+How the swarm builds a page:
+• Every box, card and section is dragged out with a crosshair, with a live size readout and selection handles, then fills in for real
+• Text boxes are dragged out and typed letter by letter; big headlines start small and grow into size
+• Rulers slide in, red alignment guides are pulled out, and text is nudged onto them until it snaps
 • Dividers are drawn with the pen tool, click by click
-• Rulers slide in, red alignment guides are pulled out, and text snaps onto them
-• Cards, list rows, nav links and other repeated parts are built once, then Alt-dragged as copies with the spacing measured; each copy is then edited: the old words are selected and retyped, and a different image or colour is swapped in
-• Text boxes are dragged out and typed letter by letter; big headlines grow into size
-• Image and video frames are dragged out, then the picture scans into place
-• Buttons, icons and form fields pop in where they belong
-• When the page is finished, the swarm follows your own mouse pointer until you exit
+• Image frames are dragged out, then the picture scans into place
+• Repeated parts are built once and then duplicated: cards, list rows, nav links and icons are Alt-dragged as copies with the spacing measured, and each copy is edited, its words selected and retyped, a different image or colour swapped in
+• When the page is done it's fully live again, and the swarm follows your own mouse pointer until you exit
 
-Everything appears in place on the real page, in the site's own colours and fonts. Nothing is copied or redrawn, so the finished page is exactly the live site, with its animations, video and links all working.
+Everything appears in place on the real page, in the site's own colours and fonts, so the finished page is exactly the live site, with its animations, video and links all working.
 
-Auto-tour is on from the start: Swarmline glides down the page screen by screen, centring each one before the swarm builds it, and moves on the moment a screen is finished. Press T to turn it off and scroll yourself. Choose 1×, 2× or 3× speed, or press Finish to show the whole page at once.
+Made for recording:
+• Auto-tour is on from the start: the page glides along screen by screen as it's built (T turns it off so you can scroll yourself)
+• Choose 1×, 2× or 3× speed, or press Finish to show the whole page at once
+• Press H to hide the controls for a clean take, or drag the control bar anywhere
+• A soft, generated soundtrack plays along (M turns it off)
 
 Great for:
 • Screen recordings, reels and launch videos of your own website
@@ -49,7 +51,7 @@ Great for:
 
 Private by design: Swarmline runs only on the tab you start it on, sends nothing anywhere and stores nothing. When you exit, the page is exactly as it was.
 
-Shortcuts: Alt+Shift+L start or stop · T auto-tour · F finish · M sound · H hide or show the controls (for clean recordings) · Esc exit. Drag the control bar to move it anywhere.
+Shortcuts: Alt+Shift+L start or stop · T auto-tour · F finish · M sound · H hide or show the controls · Esc exit.
 
 Credits: the cursor motion and build style follow Swarm Rebuild by Dhvanil Patel, a tribute to Swarm by Joel Califa. Used with permission.
 ```
@@ -59,12 +61,16 @@ Credits: the cursor motion and build style follow Swarm Rebuild by Dhvanil Patel
 | Field | File | Size |
 | --- | --- | --- |
 | Store icon | `store-icon-128.png` | 128×128 (96 px artwork, transparent margin) |
-| Screenshots (upload all four, in order) | `screenshot-1.png` … `screenshot-4.png` | 1280×800 |
+| Screenshot 1 | `screenshot-1.png`: “Every box drawn by hand” | 1280×800 |
+| Screenshot 2 | `screenshot-2.png`: “Build one. Duplicate the rest.” | 1280×800 |
+| Screenshot 3 | `screenshot-3.png`: “Then change the details” | 1280×800 |
+| Screenshot 4 | `screenshot-4.png`: “Typed, then snapped into place” | 1280×800 |
+| Screenshot 5 | `screenshot-5.png`: “Live again in seconds” | 1280×800 |
 | Small promo tile | `promo-440x280.png` | 440×280 |
 | Marquee promo tile | `marquee-1400x560.png` | 1400×560 |
 | Promo video | optional: a YouTube link to a screen recording of Swarmline on your own site | |
 
-The screenshots show Swarmline building `demo/index.html`, a page for a fictional studio, so no real company's site or branding appears in the listing. Regenerate everything with `npm run assets`.
+Upload the screenshots in that order. Each is a real moment of Swarmline building `demo/index.html` (a page for a fictional studio, so no real company's site or branding appears), captured the instant it happens and framed with a caption. Regenerate everything with `npm run assets`.
 
 ### Additional fields
 
@@ -80,7 +86,7 @@ The screenshots show Swarmline building `demo/index.html`, a page for a fictiona
 **Single purpose description:**
 
 ```
-Swarmline animates the current web page being built: it temporarily hides the page's elements and brings them back one by one with a swarm animation (tracing boxes, typing text, revealing images) until the live page is fully shown again.
+Swarmline plays an animation of the current web page being built by a swarm of cursors: it temporarily hides the page's elements and brings them back one by one (drawing boxes, typing text, duplicating repeated parts) until the live page is fully shown again.
 ```
 
 **Permission justifications:**

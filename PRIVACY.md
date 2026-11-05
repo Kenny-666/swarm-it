@@ -1,6 +1,6 @@
 # Privacy policy: Swarmline
 
-_Last updated: November 5, 2026 · version 1.0.0_
+_Last updated: November 6, 2026 · version 1.0.0_
 
 Swarmline is a Chrome extension that plays an animation of the current web page being built by a swarm. It does not collect, store, sell or share any personal data.
 

@@ -8,7 +8,7 @@ Everything in this folder is ready. These are the steps only you can do (account
       ```sh
       npm run configure -- --email new@example.com
       ```
-- [ ] Run the full check. It must say **READY**:
+- [ ] Run the full check. It must say **READY** (this also rebuilds the five store screenshots from real moments of a build):
       ```sh
       npm install
       npm run assets && npm run package && npm run preflight
@@ -41,7 +41,7 @@ The store requires a public privacy policy page, and the site in `site/` provide
 
 1. **Items → New item → upload `dist/swarmline-1.0.0.zip`**.
 2. Fill in each tab using [`store/LISTING.md`](store/LISTING.md), which has every value ready to paste:
-   - **Store listing:** description, category (Developer Tools), language, the store icon, four screenshots (in order), small promo tile and marquee tile, homepage and support URLs.
+   - **Store listing:** description, category (Developer Tools), language, the store icon, five screenshots (in order), small promo tile and marquee tile, homepage and support URLs.
    - **Privacy:** the single purpose text, the two permission justifications, "No" to remote code, no data types collected, tick the three certifications, and the privacy policy URL.
    - **Distribution:** free, public, all regions.
 3. Press **Submit for review**. Review usually takes a few days; you'll get an email.
