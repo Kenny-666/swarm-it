@@ -1,21 +1,21 @@
 # Credits and notices
 
-Swarmline's build animation runs on the **Swarm Rebuild** engine by **Dhvanil Patel**
-([github.com/DhvanilPatel/swarm-cursors](https://github.com/DhvanilPatel/swarm-cursors)).
-Swarm Rebuild is a tribute to, and adapts large parts of the animation engine from,
-**[Swarm](https://califa.github.io/swarm-site/)** by **[Joel Califa](https://joelcalifa.com)**
-([source](https://github.com/califa/swarm-site)).
+Swarmline is its own extension: its engine (scanning the page, building it in place on the
+real page, the tour, duplicates, the toolbar and everything around them) is Swarmline's.
 
-These files are adapted from Swarm Rebuild and are used with the authors' permission.
-They are **not** covered by Swarmline's MIT license, and all rights in them stay with
-their authors:
+Its **cursor motion and build style** follow **Swarm Rebuild** by **Dhvanil Patel**
+([github.com/DhvanilPatel/swarm-cursors](https://github.com/DhvanilPatel/swarm-cursors)),
+which is itself a tribute to **[Swarm](https://califa.github.io/swarm-site/)** by
+**[Joel Califa](https://joelcalifa.com)**. These parts of `extension/swarmline.js` are adapted
+from Swarm Rebuild, with permission, and stay their authors':
 
-- `extension/swarmline.js` (the engine)
-- `extension/settle.js` (the page-world animation helper)
-- `extension/background.js` (the toolbar and screenshot bridge)
-- `tests/smoke.mjs` and `tests/extension.mjs`
+- how a cursor moves: the timing, easing and sideways bend of each move, the tempo that
+  rises with the backlog, and spare cursors wandering, leaving and coming back
+- the boids orbit (`follow()`) used before the build and around your pointer after it
+- the build gestures: the crosshair drag for boxes (and where it stops on big boxes), the
+  text-box drag, typing rhythm and growing headings, pen-tool lines, the Alt-drag duplicate
+  and the double-click edit
+- the structure of the sound engine (`Sound`); its instrument, scale and sounds are Swarmline's
 
-Swarmline adds its own name, icon, website, store listing, build and packaging scripts,
-its own cursor set and colours, its own toolbar design (with hide (H) and drag-to-move
-controls and the T shortcut), its own sound design (a soft mallet instrument in D minor
-pentatonic with light key and trackpad taps), and Touring being on from the start.
+Swarmline's own cursor set, colours, toolbar, sound design, icon, website and listing are
+not taken from either project.

@@ -1,8 +1,8 @@
 MIT License
 
-This license covers the files written for Swarmline. It does not cover the files adapted
-from Swarm Rebuild by Dhvanil Patel and Swarm by Joel Califa (listed in NOTICE.md), which
-are used with their authors' permission and remain theirs.
+This license covers Swarmline's own code. The parts of extension/swarmline.js adapted from
+Swarm Rebuild by Dhvanil Patel and Swarm by Joel Califa (listed in NOTICE.md) are used with
+their authors' permission and remain theirs.
 
 Copyright (c) 2026 Tauquirshayaan
 

@@ -48,7 +48,7 @@ for (const n of ["16", "32", "48", "128"]) {
 
 // ---- code
 console.log("\nCode");
-for (const f of ["background.js", "swarmline.js", "settle.js"]) {
+for (const f of ["background.js", "swarmline.js"]) {
   try {
     execFileSync(process.execPath, ["--check", rel("extension", f)]);
     ok(`${f} parses`);

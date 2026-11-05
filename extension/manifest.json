@@ -3,7 +3,7 @@
   "name": "Swarmline – Watch Any Website Build Itself",
   "short_name": "Swarmline",
   "version": "1.0.0",
-  "description": "One click and a swarm of cursors rebuilds any website, live: boxes drawn, text typed, copies dragged, then it goes live.",
+  "description": "One click and a swarm builds any website live: boxes traced, text typed, images scanned in, then it’s live again.",
   "minimum_chrome_version": "104",
   "action": {
     "default_title": "Swarmline (Alt+Shift+L)",

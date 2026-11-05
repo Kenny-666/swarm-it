@@ -1,3535 +1,525 @@
 /*
- * Swarmline
+ * Swarmline: watch a swarm build any website, live, in your browser.
  *
- * Built on the Swarm Rebuild engine by Dhvanil Patel (github.com/DhvanilPatel/swarm-cursors),
- * itself a tribute to Swarm by Joel Califa (califa.github.io/swarm-site), whose animation
- * engine it adapts. Used with permission.
+ * One click and the page becomes a blank canvas in its own colours. A swarm of
+ * pointers then builds it back in reading order, like designers in a design tool:
+ * click and drag each box out (which then fills in for real), click and type every
+ * line of text letter by letter, and drag out image frames the picture scans into. Everything that appears is the real
+ * page, in place, so fonts, video, animations and links are exactly the site's.
+ * When the last screen is built the page is fully live again.
  *
- * Snapshots the current page into a blueprint (boxes, text blocks, media,
- * borders, repeated components), blanks the page, then lets a swarm of
- * multiplayer cursors rebuild it on a canvas: crosshair-drawn rects, typed
- * text, pen-tool lines, ruler guides with snapping, alt-drag duplicates.
- *
- * Injected by background.js; injecting again toggles it off.
+ * Injected by background.js; injecting again while it runs exits.
  */
 (() => {
   "use strict";
 
   const KEY = "__swarmline";
-  const hudPrefs = { hidden: false, pos: null }; // toolbar placement for this tab only, never stored
   if (window[KEY]) {
     window[KEY].toggle();
     return;
   }
 
-  // ---------------------------------------------------------------- constants
+  // ----------------------------------------------------------------- constants
 
-  const NAMES = [
-    "Aria", "Blake", "Cleo", "Dash", "Ezra", "Faye", "Gale", "Hugo",
-    "Iris", "Jade", "Kai", "Luna", "Milo", "Nia", "Otto", "Pia",
-    "Quinn", "Remy", "Sage", "Theo", "Uma", "Vale", "Wren", "Xavi",
-    "Yara", "Zane", "Arlo", "Bea", "Cyrus", "Dara", "Eden", "Finn",
-  ];
-  const COLORS = [
-    "#FF5A6E", "#3D9BFF", "#FFB020", "#19D3A2", "#A46BFF", "#FF7AC8",
-    "#2FE0F0", "#FF8A3D", "#6C7CFF", "#4CD964", "#FF4F9A", "#00C2A8",
-  ];
-  const BLUE = "#0D99FF";
-  const RED = "#F24822";
-  const RULER = 20;
-  const MIN_AGENTS = 8;
-  const MAX_AGENTS = 48;
-  const FLOCK_AGENTS = 36;
-  const INTRO_AGENTS = 18;
-  const MAX_ITEMS = 4000;
-  const MAX_WORLD_H = 40000;
-  // px/s: while the page scrolls faster than this, newly revealed content waits to be built
-  const SETTLE_SPEED = 900;
-  const SVGNS = "http://www.w3.org/2000/svg";
+  const SHOWN = "data-swarmline-v"; // elements the swarm has put back on the page
+  const ACTIVE = "data-swarmline"; // on <html> while the page is being built
+  const GHOST = "data-swarmline-ghost"; // the look-alike carried during a duplicate (never scanned)
+  const SANS = 'Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
+  const MAX_UNITS = 3000;
+  const CHAR_BUDGET = 9000; // exact letter positions per scan; past that they're estimated
+  // toolbar placement for this tab only: kept in memory, never stored
+  const prefs = { hudHidden: false, hudPos: null };
+  const MEASURE = "#F43F5E"; // spacing measurements while a copy is dragged
+  const INK = "#2F6BFF"; // the one colour every drawing mark uses: a design tool's selection blue
+  const rand = (a, b) => a + Math.random() * (b - a);
+  const CURSOR_COLORS = ["#FF5A6E", "#3D9BFF", "#FFB020", "#19D3A2", "#A46BFF", "#FF7AC8", "#2FE0F0", "#FF8A3D", "#6C7CFF", "#4CD964", "#FF4F9A", "#00C2A8"];
+  const CREW = ["Aria", "Blake", "Cleo", "Dash", "Ezra", "Faye", "Gale", "Hugo", "Iris", "Jade", "Kai", "Luna", "Milo", "Nia", "Otto", "Pia", "Quinn", "Remy", "Sage", "Theo", "Uma", "Vale", "Wren", "Xavi", "Yara", "Zane", "Arlo", "Bea", "Cyrus", "Dara", "Eden", "Finn"];
+  const PALETTE = ["#FF5A6E", "#FFB020", "#19D3A2", "#3D9BFF", "#A46BFF", "#FF7AC8", "#2FE0F0", "#FF8A3D"];
 
-  const REDUCED = () => {
+  const SKIP = new Set([
+    "script", "style", "noscript", "template", "head", "meta", "link", "title", "base", "br", "wbr",
+    "option", "optgroup", "datalist", "source", "track", "param", "area", "map", "swarmline-layer",
+  ]);
+  const MEDIA = new Set(["img", "svg", "video", "canvas", "picture", "iframe", "embed", "object"]);
+  const CONTROL = new Set(["input", "textarea", "select"]);
+  const LANDMARK = new Set(["header", "nav", "main", "section", "article", "aside", "footer", "form", "figure", "button", "ul", "ol", "table"]);
+
+  const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
+  const TAU = Math.PI * 2;
+  const easeOut = (t) => 1 - Math.pow(1 - t, 3);
+  const easeInOut = (t) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
+  const easeSine = (t) => (1 - Math.cos(Math.PI * t)) / 2;
+
+  const reduced = () => {
     try {
       return matchMedia("(prefers-reduced-motion: reduce)").matches;
     } catch (_) {
       return false;
     }
   };
-  const rand = (a, b) => a + Math.random() * (b - a);
-  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
-  const easeInOut = (t) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
-  const easeOut = (t) => 1 - Math.pow(1 - t, 3);
-  const easeInOutSine = (t) => (1 - Math.cos(Math.PI * t)) / 2;
-  const bump = (it) => {
-    it.v++;
+  const rgba = (hex, a) => {
+    const n = parseInt(hex.slice(1), 16);
+    return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`;
   };
-  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-  const nextFrame = () => new Promise((r) => requestAnimationFrame(() => r()));
-  const f1 = (n) => Math.round(n * 10) / 10;
 
-  function alphaOf(c) {
+  function parseColor(c) {
+    const m = c && c.match(/rgba?\(([^)]+)\)/);
+    if (!m) return null;
+    const p = m[1].split(/[\s,/]+/).filter(Boolean).map(parseFloat);
+    return { r: p[0], g: p[1], b: p[2], a: p.length >= 4 ? p[3] : 1 };
+  }
+  const alphaOf = (c) => {
     if (!c || c === "transparent") return 0;
-    const slash = c.match(/\/\s*([\d.]+%?)\s*\)/);
-    if (slash) return slash[1].endsWith("%") ? parseFloat(slash[1]) / 100 : parseFloat(slash[1]);
-    const m = c.match(/^rgba\(([^)]+)\)/);
-    if (m) {
-      const p = m[1].split(",");
-      return p.length >= 4 ? parseFloat(p[3]) : 1;
-    }
-    return 1;
-  }
-
-  function intersect(a, b) {
-    if (!a || !b) return null;
-    const l = Math.max(a.l, b.l);
-    const t = Math.max(a.t, b.t);
-    const r = Math.min(a.r, b.r);
-    const bt = Math.min(a.b, b.b);
-    return r > l && bt > t ? { l, t, r, b: bt } : null;
-  }
-
-  const ltrb = (r) => ({ l: r.left, t: r.top, r: r.right, b: r.bottom });
-
-  // ----------------------------------------------------------- cursor shapes
-
-  // Swarmline's pointer set: a classic arrow with a tail (tip at the hotspot), a
-  // pencil for lines, a gapped crosshair for drawing, a flat-serif I-beam for text.
-  const ARROW_D = "M4.5 3.2 L4.5 21 L9.1 16.9 L12.3 23.9 L15.9 22.3 L12.8 15.4 L19.2 15.3 Z";
-  const HOT = {
-    arrow: [4.5, 3.2],
-    dup: [4.5, 3.2],
-    pen: [3.2, 3.2],
-    "pen-add": [3.2, 3.2],
-    "pen-close": [3.2, 3.2],
-    cross: [12, 12],
-    ibeam: [12, 12],
-    ew: [12, 12],
-    ns: [12, 12],
+    const p = parseColor(c);
+    return p ? p.a : 1;
+  };
+  const luminance = (c) => {
+    const p = parseColor(c);
+    return p ? (0.2126 * p.r + 0.7152 * p.g + 0.0722 * p.b) / 255 : 1;
   };
 
-  function cursorSVG(shape, c) {
-    const st = 'stroke="#fff" stroke-width="1.6" stroke-linejoin="round"';
-    const badge = (inner) =>
-      `<circle cx="21.5" cy="21.5" r="5.2" fill="${c}" stroke="#fff" stroke-width="1.5"/>` + inner;
-    switch (shape) {
-      case "arrow":
-        return `<path d="${ARROW_D}" fill="${c}" ${st}/><path d="M6.3 7.4 L6.3 14.6" stroke="#fff" stroke-opacity=".45" stroke-width="1.2" stroke-linecap="round"/>`;
-      case "dup":
-        // the arrow with a plus: holding Alt to copy
-        return (
-          `<path d="${ARROW_D}" fill="${c}" ${st}/>` +
-          badge('<path d="M21.5 18.9 V24.1 M18.9 21.5 H24.1" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/>')
-        );
-      case "pen":
-      case "pen-add":
-      case "pen-close": {
-        // a pencil, point at the hotspot
-        let p =
-          `<path d="M3.2 3.2 L9 4.9 L20.6 16.5 L16.5 20.6 L4.9 9 Z" fill="${c}" ${st}/>` +
-          `<path d="M3.2 3.2 L6.6 4.2 L4.2 6.6 Z" fill="#fff"/>` +
-          `<path d="M17.6 13.5 L13.5 17.6" stroke="#fff" stroke-width="1.3"/>`;
-        if (shape === "pen-add") p += badge('<path d="M21.5 18.9 V24.1 M18.9 21.5 H24.1" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/>');
-        if (shape === "pen-close") p += badge('<circle cx="21.5" cy="21.5" r="2" fill="none" stroke="#fff" stroke-width="1.4"/>');
-        return p;
-      }
-      case "cross": {
-        // a crosshair with an open centre and a dot, so the corner it draws stays visible
-        const d = "M12 2.5 V8.5 M12 15.5 V21.5 M2.5 12 H8.5 M15.5 12 H21.5";
-        return (
-          `<g stroke-linecap="round"><path d="${d}" stroke="#fff" stroke-width="4"/><path d="${d}" stroke="${c}" stroke-width="1.8"/></g>` +
-          `<circle cx="12" cy="12" r="1.9" fill="${c}" stroke="#fff" stroke-width="1.2"/>`
-        );
-      }
-      case "ibeam": {
-        const d = "M8.5 4.2 H15.5 M12 4.2 V19.8 M8.5 19.8 H15.5";
-        return `<g fill="none" stroke-linecap="round"><path d="${d}" stroke="#fff" stroke-width="4"/><path d="${d}" stroke="${c}" stroke-width="1.9"/></g>`;
-      }
-      case "ew":
-      case "ns": {
-        const d = "M6.5 8.5 L3 12 L6.5 15.5 M17.5 8.5 L21 12 L17.5 15.5 M3.5 12 H20.5";
-        return `<g fill="none" stroke-linecap="round" stroke-linejoin="round"${shape === "ns" ? ' transform="rotate(90 12 12)"' : ""}><path d="${d}" stroke="#fff" stroke-width="4.2"/><path d="${d}" stroke="${c}" stroke-width="2"/></g>`;
+  // ---------------------------------------------------------------- environment
+
+  // Most pages scroll the window; app shells scroll one big inner element.
+  function findScroller() {
+    const se = document.scrollingElement || document.documentElement;
+    if (se.scrollHeight > innerHeight + 4) return null;
+    let best = null;
+    let area = 0;
+    const all = document.body ? document.body.getElementsByTagName("*") : [];
+    for (let i = 0; i < all.length && i < 20000; i++) {
+      const el = all[i];
+      if (el.scrollHeight <= el.clientHeight + 40 || el.clientHeight < innerHeight * 0.4) continue;
+      if (!/(auto|scroll|overlay)/.test(getComputedStyle(el).overflowY)) continue;
+      const r = el.getBoundingClientRect();
+      if (r.width * r.height > area && r.width > innerWidth * 0.35) {
+        best = el;
+        area = r.width * r.height;
       }
     }
-    return "";
+    return best;
   }
 
-  const IMG_ICON =
-    '<svg class="ph" viewBox="0 0 24 24" fill="none" stroke="#8A8A8A" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="1.8"/><path d="M4 18 L10 13 L14 16 L17 13.5 L21 17"/></svg>';
-
-  // ------------------------------------------------------------------ capture
-
-  const SKIP = new Set([
-    "script", "style", "noscript", "template", "head", "meta", "link", "title",
-    "base", "datalist", "area", "map", "source", "track", "param", "swarmline-layer",
-  ]);
-  const DROP_IN_CLONE = new Set(["script", "style", "noscript", "template", "iframe", "object", "embed", "link", "meta"]);
-  const REPLACED = new Set(["img", "svg", "video", "canvas", "iframe", "embed", "object", "picture"]);
-  const FORMS = new Set(["input", "textarea", "select"]);
-  const ATOMIC = new Set(["img", "svg", "video", "canvas", "input", "select", "textarea", "iframe", "picture", "button"]);
-
-  const TEXT_PROPS = [
-    "color", "font-family", "font-size", "font-weight", "font-style", "font-variant",
-    "font-stretch", "font-feature-settings", "font-variation-settings", "font-kerning",
-    "font-optical-sizing", "line-height", "letter-spacing", "word-spacing",
-    "text-transform", "text-align", "text-indent", "text-decoration-line",
-    "text-decoration-color", "text-decoration-style", "text-decoration-thickness",
-    "text-underline-offset", "text-shadow", "white-space", "white-space-collapse",
-    "text-wrap-mode", "text-wrap-style", "direction", "overflow-wrap", "word-break",
-    "hyphens", "tab-size", "-webkit-text-fill-color", "-webkit-text-stroke-width",
-    "-webkit-text-stroke-color", "text-rendering", "-webkit-font-smoothing",
-    "list-style-type", "list-style-position", "list-style-image", "writing-mode",
-  ];
-  const BOX_PROPS = [
-    "display", "box-sizing", "width", "height", "min-width", "min-height", "max-width",
-    "max-height", "padding-top", "padding-right", "padding-bottom", "padding-left",
-    "margin-top", "margin-right", "margin-bottom", "margin-left", "border-top-width",
-    "border-right-width", "border-bottom-width", "border-left-width", "border-top-style",
-    "border-right-style", "border-bottom-style", "border-left-style", "border-top-color",
-    "border-right-color", "border-bottom-color", "border-left-color",
-    "border-top-left-radius", "border-top-right-radius", "border-bottom-right-radius",
-    "border-bottom-left-radius", "background-color", "background-image",
-    "background-size", "background-position", "background-repeat", "background-clip",
-    "-webkit-background-clip", "box-shadow", "opacity", "vertical-align", "position",
-    "top", "right", "bottom", "left", "flex-direction", "flex-wrap", "align-items",
-    "justify-content", "gap", "flex-grow", "flex-shrink", "flex-basis", "align-self",
-    "object-fit", "object-position", "overflow-x", "overflow-y", "text-overflow",
-    "-webkit-line-clamp", "-webkit-box-orient", "visibility", "transform", "filter",
-    "float", "fill", "stroke", "clip-path", "mix-blend-mode",
-    "-webkit-mask-image", "-webkit-mask-size", "-webkit-mask-position", "-webkit-mask-repeat",
-  ];
-  const ELEM_PROPS = [...TEXT_PROPS, ...BOX_PROPS];
-  const SVG_PROPS = [
-    "fill", "stroke", "stroke-width", "stroke-linecap", "stroke-linejoin",
-    "stroke-dasharray", "stroke-dashoffset", "stroke-miterlimit", "fill-opacity",
-    "stroke-opacity", "fill-rule", "clip-rule", "opacity", "color", "stop-color",
-    "stop-opacity", "display", "visibility", "font-family", "font-size", "font-weight",
-    "text-anchor", "dominant-baseline", "letter-spacing", "mix-blend-mode", "filter",
-  ];
-  const SVG_OUTER_PROPS = [
-    "margin-top", "margin-right", "margin-bottom", "margin-left", "vertical-align", "display",
-    "position", "top", "right", "bottom", "left", "transform", "transform-origin",
-    "flex-shrink", "flex-grow", "align-self", "order", "overflow",
-  ];
-  const RECT_PROPS = [
-    "background-color", "background-image", "background-size", "background-position",
-    "background-repeat", "background-origin", "background-clip", "border-top-width",
-    "border-right-width", "border-bottom-width", "border-left-width", "border-top-style",
-    "border-right-style", "border-bottom-style", "border-left-style", "border-top-color",
-    "border-right-color", "border-bottom-color", "border-left-color",
-    "border-top-left-radius", "border-top-right-radius", "border-bottom-right-radius",
-    "border-bottom-left-radius", "box-shadow", "backdrop-filter", "filter", "clip-path",
-    "-webkit-mask-image", "-webkit-mask-size", "-webkit-mask-position", "-webkit-mask-repeat",
-  ];
-
-  function styleString(cs, props) {
-    let s = "";
-    for (const p of props) {
-      const v = cs.getPropertyValue(p);
-      if (v !== "") s += `${p}:${v};`;
+  class Env {
+    constructor() {
+      this.el = findScroller();
     }
-    return s;
+    get top() {
+      return this.el ? this.el.scrollTop : window.scrollY;
+    }
+    get height() {
+      if (this.el) return this.el.scrollHeight;
+      return Math.max(document.documentElement.scrollHeight, document.body ? document.body.scrollHeight : 0);
+    }
+    view() {
+      if (!this.el) return { x: 0, y: 0, w: document.documentElement.clientWidth || innerWidth, h: innerHeight };
+      const r = this.el.getBoundingClientRect();
+      return { x: r.left + this.el.clientLeft, y: r.top + this.el.clientTop, w: this.el.clientWidth, h: this.el.clientHeight };
+    }
+    maxTop() {
+      return Math.max(0, this.height - this.view().h);
+    }
+    scrollTo(y) {
+      const o = { top: y, behavior: "instant" };
+      if (this.el) this.el.scrollTo(o);
+      else window.scrollTo(o);
+    }
+    owns(el) {
+      return !this.el || this.el.contains(el);
+    }
   }
 
-  const lhPx = (cs) => {
-    const v = parseFloat(cs.lineHeight);
-    return isNaN(v) ? (parseFloat(cs.fontSize) || 16) * 1.2 : v;
-  };
+  // ------------------------------------------------------------- the page itself
 
-  function kidsOf(el) {
-    if (el.shadowRoot) return [...el.shadowRoot.childNodes];
-    if (el.localName === "slot") {
-      const a = el.assignedNodes({ flatten: true });
-      return a.length ? a : [...el.childNodes];
+  // While building, every element on the page is hidden except the ones the swarm has
+  // put back. Layout never changes (visibility keeps boxes in place), the page keeps
+  // running underneath, and the "blank canvas" is simply the site's own background.
+  class Stage {
+    constructor() {
+      this.marked = [];
+      this.clips = new Map();
+      this.style = document.createElement("style");
+      this.style.setAttribute("data-swarmline", "");
+      this.style.textContent =
+        `html[${ACTIVE}] body *:not([${SHOWN}]):not(swarmline-layer){visibility:hidden !important}` +
+        `html[${ACTIVE}] [${SHOWN}]{visibility:visible !important}`;
     }
-    return [...el.childNodes];
-  }
-
-  // Copy one element's computed style onto its clone, fix up media sources.
-  // ::before / ::after become real spans so icons, chevrons and separators survive.
-  function pseudoClone(src, which) {
-    const ps = getComputedStyle(src, which);
-    const c = ps.content;
-    if (!c || c === "none" || c === "normal" || ps.display === "none") return null;
-    const sp = document.createElement("span");
-    const str = c.match(/^"((?:[^"\\]|\\.)*)"/);
-    if (str) sp.textContent = str[1].replace(/\\(.)/g, "$1");
-    else if (/^url\(/.test(c)) {
-      const u = c.match(/^url\(\s*["']?([^"')]+)["']?\s*\)/);
-      if (u) {
-        const im = document.createElement("img");
-        im.src = u[1];
-        im.setAttribute("style", "display:inline-block;vertical-align:middle;");
-        sp.appendChild(im);
-      }
+    hide() {
+      (document.head || document.documentElement).appendChild(this.style);
+      document.documentElement.setAttribute(ACTIVE, "");
     }
-    sp.setAttribute("style", styleString(ps, ELEM_PROPS));
-    return sp;
-  }
-
-  function addPseudos(src, dst) {
-    const b = pseudoClone(src, "::before");
-    if (b) dst.insertBefore(b, dst.firstChild);
-    const a = pseudoClone(src, "::after");
-    if (a) dst.appendChild(a);
-  }
-
-  function prepClone(src, dst) {
-    const tag = src.localName;
-    if (DROP_IN_CLONE.has(tag)) {
-      dst.remove();
-      return null;
-    }
-    const cs = getComputedStyle(src);
-    if (cs.display === "none") {
-      dst.remove();
-      return null;
-    }
-    const isSvg = src instanceof SVGElement;
-    let st = styleString(cs, isSvg ? SVG_PROPS : ELEM_PROPS);
-    if (isSvg && tag === "svg" && !src.ownerSVGElement) {
-      dst.setAttribute("width", src.clientWidth || src.getBoundingClientRect().width);
-      dst.setAttribute("height", src.clientHeight || src.getBoundingClientRect().height);
-      st += styleString(cs, SVG_OUTER_PROPS);
-    }
-    dst.setAttribute("style", st);
-    for (const a of [...dst.attributes]) {
-      const n = a.name;
-      if (n.startsWith("on") || n === "contenteditable" || n === "tabindex" || n === "autofocus" || n === "srcset" || n === "sizes" || n === "loading")
-        dst.removeAttribute(n);
-    }
-    if (tag === "img") {
-      dst.setAttribute("src", imgSrc(src));
-      dst.setAttribute("decoding", "async");
-    }
-    if (tag === "svg") fixSvgRefs(src, dst);
-    // Clones live in the page's document: custom elements would be upgraded by the
-    // site's own JS (and often wipe their content), media would play. Swap in inert stand-ins.
-    if (tag === "audio") {
-      dst.remove();
-      return null;
-    }
-    if (tag === "video" || tag === "canvas" || (!isSvg && tag.includes("-"))) {
-      let rep;
-      const vurl = tag === "video" ? videoUrl(src) : null;
-      if (vurl) {
-        rep = document.createElement("video");
-        for (const [k, v] of [["src", vurl], ["muted", ""], ["playsinline", ""], ["preload", "auto"]]) rep.setAttribute(k, v);
-        if (!src.paused || src.autoplay) rep.setAttribute("autoplay", "");
-        if (src.loop || src.autoplay || !src.paused) rep.setAttribute("loop", "");
-        if (src.poster) rep.setAttribute("poster", src.poster);
-      } else if (tag === "video" || tag === "canvas") {
-        let url = tag === "video" ? src.poster : canvasPixels(src);
-        rep = document.createElement(url ? "img" : "span");
-        if (url) rep.setAttribute("src", url);
-        else st += "background:#1b1b1f;";
-      } else {
-        rep = document.createElement("span");
-        while (dst.firstChild) rep.appendChild(dst.firstChild);
-      }
-      rep.setAttribute("style", st);
-      if (dst.parentNode) dst.replaceWith(rep);
-      dst = rep;
-    }
-    if (!isSvg && !REPLACED.has(tag) && !FORMS.has(tag) && tag !== "img") addPseudos(src, dst);
-    return dst;
-  }
-
-  // Clones are made in a document without a custom-element registry so the
-  // site's component code never runs on them.
-  let inertDoc = null;
-  const inert = () => inertDoc || (inertDoc = document.implementation.createHTMLDocument(""));
-
-  function cloneStyled(src) {
-    const dst = inert().importNode(src, true);
-    const a = [...src.querySelectorAll("*")];
-    const b = [...dst.querySelectorAll("*")];
-    const root = prepClone(src, dst) || document.createElement("span");
-    for (let i = 0; i < a.length && i < b.length; i++) prepClone(a[i], b[i]);
-    return root;
-  }
-
-  function cloneDescendantsStyled(src, dst) {
-    const a = src.querySelectorAll("*");
-    const b = dst.querySelectorAll("*");
-    for (let i = 0; i < a.length && i < b.length; i++) prepClone(a[i], b[i]);
-  }
-
-  function imgSrc(img) {
-    let s = img.currentSrc || img.src || "";
-    const lazy = img.getAttribute("data-src") || img.getAttribute("data-lazy-src") || img.getAttribute("data-original");
-    if (lazy && (!s || s.startsWith("data:") || !img.complete || !img.naturalWidth)) {
+    // read the page as it really is (our hiding rule off for a moment, never painted)
+    peek(fn) {
+      const was = this.style.disabled;
+      this.style.disabled = true;
       try {
-        s = new URL(lazy, location.href).href;
+        return fn();
+      } finally {
+        this.style.disabled = was;
+      }
+    }
+    show(el) {
+      if (!el || el.hasAttribute(SHOWN)) return false;
+      el.setAttribute(SHOWN, "");
+      this.marked.push(el);
+      return true;
+    }
+    shown(el) {
+      return !!el && el.hasAttribute(SHOWN);
+    }
+    fadeIn(el, ms, from = 0) {
+      if (!this.show(el)) return;
+      try {
+        const op = getComputedStyle(el).opacity;
+        el.animate([{ opacity: from }, { opacity: op }], { duration: ms, easing: "cubic-bezier(.2,.7,.2,1)" });
       } catch (_) {}
     }
-    return s;
-  }
-
-  // Shadow trees can't see document-level <symbol>/<linearGradient> ids, so
-  // inline anything the clone references.
-  function fixSvgRefs(src, dst) {
-    for (const u of dst.querySelectorAll("use")) {
-      const href = u.getAttribute("href") || u.getAttribute("xlink:href");
-      if (!href || href[0] !== "#") continue;
-      const ref = document.getElementById(href.slice(1));
-      if (!ref) continue;
-      const isSym = ref.localName === "symbol";
-      const g = document.createElementNS(SVGNS, isSym ? "svg" : "g");
-      if (isSym) {
-        for (const at of ["viewBox", "preserveAspectRatio"]) if (ref.getAttribute(at)) g.setAttribute(at, ref.getAttribute(at));
-        g.setAttribute("width", u.getAttribute("width") || "100%");
-        g.setAttribute("height", u.getAttribute("height") || "100%");
-        g.setAttribute("x", u.getAttribute("x") || 0);
-        g.setAttribute("y", u.getAttribute("y") || 0);
-        g.setAttribute("overflow", "visible");
-      } else if (u.getAttribute("x") || u.getAttribute("y")) {
-        g.setAttribute("transform", `translate(${u.getAttribute("x") || 0} ${u.getAttribute("y") || 0})`);
-      }
-      const us = u.getAttribute("style");
-      if (us) g.setAttribute("style", us);
-      for (const ch of ref.childNodes) {
-        if (ch.nodeType !== 1) {
-          g.appendChild(ch.cloneNode(true));
-          continue;
-        }
-        g.appendChild(cloneStyled(ch));
-      }
-      u.replaceWith(g);
+    // text typed in place: clip the element to the letters written so far
+    clip(el, path) {
+      if (!this.clips.has(el)) this.clips.set(el, [el.style.getPropertyValue("clip-path"), el.style.getPropertyPriority("clip-path")]);
+      el.style.setProperty("clip-path", path, "important");
     }
-    const html = dst.outerHTML;
-    const ids = new Set();
-    html.replace(/url\(\s*["']?#([^"')\s]+)["']?\s*\)/g, (_, id) => ids.add(id));
-    if (!ids.size) return;
-    let defs = null;
-    for (const id of ids) {
-      if (dst.querySelector(`[id="${CSS.escape(id)}"]`)) continue;
-      const ref = document.getElementById(id);
-      if (!ref) continue;
-      if (!defs) {
-        defs = document.createElementNS(SVGNS, "defs");
-        dst.insertBefore(defs, dst.firstChild);
-      }
-      defs.appendChild(ref.cloneNode(true));
+    unclip(el) {
+      const c = this.clips.get(el);
+      if (!c) return;
+      this.clips.delete(el);
+      if (c[0]) el.style.setProperty("clip-path", c[0], c[1]);
+      else el.style.removeProperty("clip-path");
+    }
+    restore() {
+      for (const el of [...this.clips.keys()]) this.unclip(el);
+      document.documentElement.removeAttribute(ACTIVE);
+      for (const el of this.marked) el.removeAttribute(SHOWN);
+      this.marked = [];
+      this.style.remove();
     }
   }
 
-  // Pixels for things the DOM can't give back (WebGL canvases, playing video,
-  // cross-origin iframes) come from a screenshot taken when the user clicked.
-  function cropShot(shot, r) {
-    if (!shot || !shot.valid) return null;
-    if (r.height > innerHeight * 3 || r.width > innerWidth * 2) return null;
-    const vis = intersect(ltrb(r), { l: 0, t: 0, r: innerWidth, b: innerHeight });
-    if (!vis) return null;
-    const k = shot.scale;
-    const c = document.createElement("canvas");
-    c.width = Math.max(1, Math.round(r.width * k));
-    c.height = Math.max(1, Math.round(r.height * k));
-    const w = (vis.r - vis.l) * k;
-    const h = (vis.b - vis.t) * k;
-    c.getContext("2d").drawImage(shot.img, vis.l * k, vis.t * k, w, h, (vis.l - r.left) * k, (vis.t - r.top) * k, w, h);
-    const full = vis.l <= r.left + 1 && vis.t <= r.top + 1 && vis.r >= r.right - 1 && vis.b >= r.bottom - 1;
-    try {
-      return c.toDataURL(full ? "image/jpeg" : "image/webp", 0.9);
-    } catch (_) {
-      return null;
-    }
+  // --------------------------------------------------------------------- scanner
+
+  function radiiOf(s, w, h) {
+    const m = Math.min(w, h) / 2;
+    return [s.borderTopLeftRadius, s.borderTopRightRadius, s.borderBottomRightRadius, s.borderBottomLeftRadius].map((v) => {
+      const n = parseFloat(v) || 0;
+      return clamp(/%$/.test(v) ? (n / 100) * Math.min(w, h) : n, 0, m);
+    });
   }
 
-  // A URL another <video> can play: the chosen source, a <source>, or a lazy-load data-src.
-  // (blob:/MediaSource streams are tied to the original element and can't be reused.)
-  function videoUrl(el) {
-    const cands = [el.currentSrc, el.getAttribute("src"), el.getAttribute("data-src")];
-    for (const s of el.querySelectorAll("source")) cands.push(s.getAttribute("src"), s.getAttribute("data-src"));
-    for (const c of cands) {
-      if (!c || /^(blob|mediasource):/i.test(c)) continue;
-      try {
-        return new URL(c, location.href).href;
-      } catch (_) {}
-    }
-    return null;
-  }
+  const sameColor = (a, b) => !!a && !!b && a.replace(/\s/g, "") === b.replace(/\s/g, "");
 
-  function canvasPixels(el) {
-    try {
-      const probe = document.createElement("canvas");
-      probe.width = probe.height = 12;
-      const g = probe.getContext("2d");
-      g.drawImage(el, 0, 0, 12, 12);
-      const d = g.getImageData(0, 0, 12, 12).data;
-      let a = 0;
-      for (let i = 3; i < d.length; i += 4) a += d[i];
-      return a > 0 ? el.toDataURL() : null;
-    } catch (_) {
-      return null;
-    }
-  }
-
-  function boxyStyle(st) {
-    if (alphaOf(st.backgroundColor) > 0.02) return true;
-    if (st.backgroundImage && st.backgroundImage !== "none") return true;
-    if (st.boxShadow && st.boxShadow !== "none") return true;
-    for (const s of ["Top", "Right", "Bottom", "Left"]) {
-      if (parseFloat(st["border" + s + "Width"]) > 0 && st["border" + s + "Style"] !== "none" && alphaOf(st["border" + s + "Color"]) > 0.02) return true;
+  function paintsBox(s, under) {
+    const bg = s.backgroundColor;
+    if (alphaOf(bg) > 0.03 && !sameColor(bg, under)) return true;
+    if (s.backgroundImage && s.backgroundImage !== "none") return true;
+    if (s.boxShadow && s.boxShadow !== "none") return true;
+    if (s.backdropFilter && s.backdropFilter !== "none") return true;
+    for (const side of ["Top", "Right", "Bottom", "Left"]) {
+      if (parseFloat(s["border" + side + "Width"]) > 0 && s["border" + side + "Style"] !== "none" && alphaOf(s["border" + side + "Color"]) > 0.05) return true;
     }
     return false;
   }
 
-  function sameColor(a, b) {
-    return (a || "").replace(/\s/g, "") === (b || "").replace(/\s/g, "");
+  const isInlineLevel = (d) => d.startsWith("inline") || d === "contents";
+
+  function nameOf(el, kind) {
+    const tag = el.localName;
+    if (kind === "media") return tag === "img" || tag === "picture" ? "Image" : tag === "svg" ? "Vector" : tag[0].toUpperCase() + tag.slice(1);
+    if (LANDMARK.has(tag)) return tag[0].toUpperCase() + tag.slice(1);
+    const cls = ((el.getAttribute && el.getAttribute("class")) || "").trim().split(/\s+/)[0] || "";
+    const clean = cls.replace(/[^a-zA-Z0-9-]/g, "").replace(/^(-|\d)+/, "");
+    if (clean && clean.length <= 18) return clean[0].toUpperCase() + clean.slice(1);
+    return "Frame";
   }
 
-  function pageBackground() {
-    const h = document.documentElement;
-    const b = document.body;
-    const hs = getComputedStyle(h);
-    const bs = b ? getComputedStyle(b) : null;
-    const pick = (cs) => ({
-      color: cs.backgroundColor,
-      image: cs.backgroundImage,
-      size: cs.backgroundSize,
-      position: cs.backgroundPosition,
-      repeat: cs.backgroundRepeat,
-    });
-    if (alphaOf(hs.backgroundColor) > 0.01 || hs.backgroundImage !== "none") return { ...pick(hs), from: h };
-    if (bs && (alphaOf(bs.backgroundColor) > 0.01 || bs.backgroundImage !== "none")) return { ...pick(bs), from: b };
-    const dark = /dark/.test(hs.colorScheme) && matchMedia("(prefers-color-scheme: dark)").matches;
-    return { color: dark ? "rgb(18, 18, 18)" : "rgb(255, 255, 255)", image: "none", from: null };
-  }
-
-  /**
-   * Walk the live DOM and produce a blueprint the swarm can rebuild.
-   * Items live in "world" coords (scroller content space) or, for fixed UI,
-   * in screen coords on an "over"/"under" layer.
-   */
-  function captureModel(env, shot, pre = {}) {
-    const { ox, oy, sx, sy, vw, vh } = env.geom();
-    const canvases = pre.canvases || new Map();
-    const loops = readLoops();
-    for (const l of loops.values())
-      if (l.origin) l.at = { world: { x: l.origin.x - ox + sx, y: l.origin.y - oy + sy }, screen: { x: l.origin.x, y: l.origin.y } };
-    let curLoop = null; // innermost endlessly looping animation the walk is inside
-    const loopChain = []; // all of them, outermost first (a floating icon on a spinning ring)
-    const riders = []; // hidden half of a marquee: no build task, shown once its loop starts
-    const docW = Math.max(env.scrollWidth(), vw);
-    const docH = Math.min(Math.max(env.scrollHeight(), vh), MAX_WORLD_H);
-    const items = [];
-    const roots = [];
-    let order = 0;
-    const csCache = new Map();
-    const css = (el) => {
-      let c = csCache.get(el);
-      if (!c) {
-        c = getComputedStyle(el);
-        csCache.set(el, c);
-      }
-      return c;
-    };
-    const inlineCache = new Map();
-    const fullClip = { l: -1e9, t: -1e9, r: 1e9, b: 1e9 };
-    const viewClip = { l: 0, t: 0, r: innerWidth, b: innerHeight };
-    const pageBg = env.pageBg;
-    const floats = [];
-    const bars = [];
-    let portKey = null;
-    const keyPaths = [];
-    const tok = (path) => keyPaths.push(path) - 1;
-    const roundFrames = []; // rounded boxes that clip their content
-    const html = document.documentElement;
-    const body = document.body;
-
-    const conv = (r, layer) =>
-      layer === "world"
-        ? { x: r.left - ox + sx, y: r.top - oy + sy, w: r.width, h: r.height }
-        : { x: r.left, y: r.top, w: r.width, h: r.height };
-    const convClip = (c, layer) =>
-      layer === "world" ? { l: c.l - ox + sx, t: c.t - oy + sy, r: c.r - ox + sx, b: c.b - oy + sy } : { ...c };
-    const clipFor = (r, clip, layer) => {
-      if (r.left >= clip.l - 0.5 && r.top >= clip.t - 0.5 && r.right <= clip.r + 0.5 && r.bottom <= clip.b + 0.5) return null;
-      return convClip(clip, layer);
-    };
-    // (inside a looping animation, content off to the side scrolls into view later)
-    const inDoc = (b, layer) =>
-      layer === "world"
-        ? (curLoop || (b.x + b.w > 0 && b.x < docW)) && b.y + b.h > 0 && b.y < docH
-        : (curLoop || (b.x + b.w > 0 && b.x < innerWidth)) && b.y + b.h > 0 && b.y < innerHeight;
-
-    function add(it) {
-      it.v = 1;
-      it.rv = 0;
-      it.vis = false;
-      it.dx = 0;
-      it.dy = 0;
-      it.scale = 1;
-      it.mode = "own";
-      if (curLoop) {
-        it.loops = loopChain.slice();
-        const bb = { l: it.x, t: it.y, r: it.x + it.w, b: it.y + it.h };
-        if (it.clip && !intersect(bb, it.clip)) {
-          it.rider = true;
-          for (const l of loopChain) l.riders.push(it);
-          riders.push(it);
-          return it;
-        }
-        for (const l of loopChain) l.items.push(it);
-      }
-      it.id = items.length;
-      items.push(it);
-      return it;
+  class Scanner {
+    constructor(env, host, stage) {
+      this.env = env;
+      this.host = host;
+      this.stage = stage;
+      this.seen = new WeakSet();
+      this.boxOf = new WeakMap();
+      this.flowRoots = new WeakSet();
+      this.count = 0;
     }
 
-    // Linear part of transforms, accumulated down the tree, so a box inside a rotated
-    // parent is drawn at its real size and angle rather than as its (larger) bounding box.
-    // (includes the individual rotate / scale properties that CSS animations often use)
-    const linOf = (cs) => {
-      if (!transformed(cs)) return null;
-      try {
-        const m = new DOMMatrix(fullTransform(cs));
-        return [m.a, m.b, m.c, m.d];
-      } catch (_) {
-        return null;
-      }
-    };
-    const mulLin = (p, q) => [p[0] * q[0] + p[2] * q[1], p[1] * q[0] + p[3] * q[1], p[0] * q[2] + p[2] * q[3], p[1] * q[2] + p[3] * q[3]];
-    function turnOf(el, ctx) {
-      const L = ctx.lin;
-      if (!L || !(el instanceof HTMLElement)) return null;
-      const [a, b, c, d] = L;
-      const k = Math.hypot(a, b);
-      if (!(k > 0) || Math.abs(a - d) > 1e-3 * k || Math.abs(b + c) > 1e-3 * k) return null; // skew / flip
-      const deg = (Math.atan2(b, a) * 180) / Math.PI;
-      if (Math.abs(deg) < 0.5) return null;
-      const w = el.offsetWidth;
-      const h = el.offsetHeight;
-      if (!(w > 0 && h > 0)) return null;
-      return { deg: f1(deg), w: w * k, h: h * k };
-    }
-    // the turned box shares its centre with its bounding box
-    const unturn = (r, t) => {
-      const cx = (r.left + r.right) / 2;
-      const cy = (r.top + r.bottom) / 2;
-      return { left: cx - t.w / 2, top: cy - t.h / 2, right: cx + t.w / 2, bottom: cy + t.h / 2, width: t.w, height: t.h };
-    };
-    // icon fonts: an empty <i> whose ::before is a glyph
-    const glyphOf = (el, which) => {
-      const ps = getComputedStyle(el, which);
-      const m = ps.display !== "none" && ps.content && ps.content.match(/^"((?:[^"\\]|\\.)*)"$/);
-      return !!(m && /\S/.test(m[1]));
-    };
-
-    // Plain word / letter wrappers from text-splitting libraries (GSAP SplitText,
-    // Splitting.js, ...) are inline-blocks; treat them as text so a heading is typed as
-    // one line instead of becoming hundreds of single-letter layers.
-    function splitPiece(n, d) {
-      if (d !== "inline-block" || ATOMIC.has(n.localName) || n.shadowRoot) return false;
-      const cls = (n.getAttribute && n.getAttribute("class")) || "";
-      const marked =
-        /inline-block/.test(n.getAttribute("style") || "") ||
-        /(^|[\s_-])(char|chars|word|words|line|lines|letter|split)([\s_-]|\d|$)/i.test(cls) ||
-        n.hasAttribute("data-char") ||
-        n.hasAttribute("data-word");
-      return marked && /\S/.test(n.textContent) && !boxyStyle(css(n)) && allInline(n);
-    }
-
-    function allInline(el) {
-      let v = inlineCache.get(el);
-      if (v !== undefined) return v;
-      v = !el.shadowRoot;
-      if (v)
-        for (const c of el.children) {
-          const tag = c.localName;
-          if (SKIP.has(tag) || tag === "br" || tag === "wbr") continue;
-          if (c instanceof SVGElement) continue;
-          const d = css(c).display;
-          if (d === "none") continue;
-          if (d === "inline") {
-            if (!allInline(c)) {
-              v = false;
-              break;
-            }
-          } else if (!d.startsWith("inline")) {
-            v = false;
-            break;
-          }
-        }
-      inlineCache.set(el, v);
-      return v;
-    }
-
-    function rootStyle(cs, isRun) {
-      let s = styleString(cs, TEXT_PROPS);
-      if (isRun) return s + "display:block;padding:0;margin:0;box-sizing:border-box;width:100%;height:100%;position:relative;";
-      const pad = (side) =>
-        (parseFloat(cs.getPropertyValue(`padding-${side}`)) || 0) + (parseFloat(cs.getPropertyValue(`border-${side}-width`)) || 0);
-      let d = cs.display;
-      if (/flex/.test(d)) {
-        d = "flex";
-        s += styleString(cs, ["flex-direction", "flex-wrap", "align-items", "justify-content", "align-content", "row-gap", "column-gap"]);
-      } else if (/grid/.test(d)) {
-        d = "grid";
-        s += styleString(cs, [
-          "grid-template-columns", "grid-template-rows", "grid-auto-flow", "grid-auto-columns",
-          "grid-auto-rows", "align-items", "justify-items", "justify-content", "align-content",
-          "row-gap", "column-gap",
-        ]);
-      } else if (d === "list-item" || d === "-webkit-box") {
-        // keep
-      } else d = "block";
-      s += `display:${d};padding:${pad("top")}px ${pad("right")}px ${pad("bottom")}px ${pad("left")}px;`;
-      if (cs.overflowX !== "visible" || cs.overflowY !== "visible" || cs.textOverflow === "ellipsis" || (cs.webkitLineClamp && cs.webkitLineClamp !== "none")) {
-        s += styleString(cs, ["overflow-x", "overflow-y", "text-overflow", "-webkit-line-clamp", "-webkit-box-orient"]);
-      }
-      return s + "margin:0;box-sizing:border-box;width:100%;height:100%;position:relative;";
-    }
-
-    function textItem(base, root, tb, cs, layer, extra) {
-      const fs = parseFloat(cs.fontSize) || 16;
-      const text = root.textContent.replace(/\s+/g, " ").trim();
-      return add({
-        kind: "text",
-        ...base,
-        tb,
-        full: root,
-        fs,
-        lh: lhPx(cs),
-        align: cs.textAlign,
-        text,
-        sig: text,
-        ...extra,
-      });
-    }
-
-    function emitLeaf(el, cs, r, ctx, key) {
-      const root = document.createElement("div");
-      root.setAttribute("style", rootStyle(cs, false));
-      const clone = inert().importNode(el, true);
-      cloneDescendantsStyled(el, clone);
-      while (clone.firstChild) root.appendChild(clone.firstChild);
-      addPseudos(el, root);
-      const rg = document.createRange();
-      rg.selectNodeContents(el);
-      const tr = rg.getBoundingClientRect();
-      // table cells center their content vertically; reproduce the offset
-      if (cs.display === "table-cell" && tr.height) root.style.paddingTop = Math.max(0, tr.top - r.top) + "px";
-      // floats outside the leaf (figures, infoboxes) shape its line boxes: add invisible shims
-      if (/^(block|list-item)$/.test(root.style.display)) {
-        const n = (p) => parseFloat(cs.getPropertyValue(p)) || 0;
-        const cl = r.left + n("border-left-width") + n("padding-left");
-        const ct = r.top + n("border-top-width") + n("padding-top");
-        const cr = r.right - n("border-right-width") - n("padding-right");
-        for (const f of floats) {
-          if (f.b <= r.top + 1 || f.t >= r.bottom - 1 || f.r <= r.left + 1 || f.l >= r.right - 1) continue;
-          if (f.el.contains(el)) continue;
-          const shim = document.createElement("div");
-          const top = Math.max(0, f.t - ct);
-          const w = f.side === "left" ? f.r - cl : cr - f.l;
-          if (w <= 0) continue;
-          shim.setAttribute("style", `float:${f.side};clear:${f.side};width:${w}px;height:${Math.max(0, f.b - Math.max(f.t, ct))}px;margin-top:${top}px;`);
-          root.insertBefore(shim, root.firstChild);
-        }
-      }
-      const turn = turnOf(el, ctx);
-      if (turn) {
-        r = unturn(r, turn);
-        root.style.rotate = turn.deg + "deg";
-      }
-      const box = conv(r, ctx.layer);
-      const tb = !turn && tr.width > 0 && tr.height > 0 ? conv(tr, ctx.layer) : { ...box };
-      tb.x = clamp(tb.x, box.x - 4, box.x + box.w);
-      tb.y = clamp(tb.y, box.y - 4, box.y + box.h);
-      textItem(
-        { ...box, layer: ctx.layer, key, op: ctx.op, clip: clipFor(r, ctx.clip, ctx.layer), parentBox: ctx.boxItem, blend: cs.mixBlendMode !== "normal" ? cs.mixBlendMode : ctx.blend || "" },
-        root,
-        tb,
-        cs,
-        ctx.layer,
-      );
-    }
-
-    function emitRun(el, cs, run, ctx) {
-      const rg = document.createRange();
-      rg.setStartBefore(run[0]);
-      rg.setEndAfter(run[run.length - 1]);
-      const r = rg.getBoundingClientRect();
-      if (r.width < 1 || r.height < 1) return;
-      if (!curLoop && !intersect(ltrb(r), ctx.clip)) return;
-      const root = document.createElement("div");
-      root.setAttribute("style", rootStyle(cs, true));
-      const single = r.height < lhPx(cs) * 1.6;
-      if (single) root.style.whiteSpace = "nowrap";
-      for (const n of run) {
-        if (n.nodeType === 3) root.appendChild(document.createTextNode(n.data));
-        else root.appendChild(cloneStyled(n));
-      }
-      const box = conv(r, ctx.layer);
-      if (!inDoc(box, ctx.layer)) return;
-      box.w += 1;
-      textItem(
-        { ...box, layer: ctx.layer, key: ctx.key(), op: ctx.op, clip: clipFor(r, ctx.clip, ctx.layer), parentBox: ctx.boxItem, blend: ctx.blend || "" },
-        root,
-        { ...box },
-        cs,
-        ctx.layer,
-      );
-    }
-
-    function lineItem(pts, stroke, sw, dash, ctx, key) {
-      const xs = pts.map((p) => p.x);
-      const ys = pts.map((p) => p.y);
-      return add({
-        kind: "line",
-        x: Math.min(...xs),
-        y: Math.min(...ys),
-        w: Math.max(...xs) - Math.min(...xs),
-        h: Math.max(...ys) - Math.min(...ys),
-        pts,
-        stroke,
-        sw,
-        dash,
-        placed: 0,
-        shut: false,
-        edit: false,
-        owner: null,
-        layer: ctx.layer,
-        key,
-        op: ctx.op,
-        clip: null,
-        parentBox: ctx.boxItem,
-        sig: pts.length + stroke,
-      });
-    }
-
-    function emitBox(el, cs, r, ctx, key, forceRect, ownTurn) {
-      if (el === html) return null;
-      const turn = ownTurn || turnOf(el, ctx);
-      if (turn && !ownTurn) r = unturn(r, turn);
-      const tag = el.localName;
-      const bgc = cs.backgroundColor;
-      const bgi = cs.backgroundImage;
-      // (a box the colour of what's painted under it adds nothing; a box the page's colour
-      // sitting on a white card does)
-      const under = ctx.under || pageBg.color;
-      const bgVisible = (alphaOf(bgc) > 0.01 && !sameColor(bgc, under)) || bgi !== "none";
-      if (el === body && pageBg.from === body) return null;
-      const sides = ["top", "right", "bottom", "left"].map((s) => {
-        const w = parseFloat(cs.getPropertyValue(`border-${s}-width`)) || 0;
-        const st = cs.getPropertyValue(`border-${s}-style`);
-        const c = cs.getPropertyValue(`border-${s}-color`);
-        return w > 0 && st !== "none" && st !== "hidden" && alphaOf(c) > 0.02 ? { s, w, st, c } : null;
-      });
-      const nb = sides.filter(Boolean).length;
-      const shadow = cs.boxShadow && cs.boxShadow !== "none";
-      const backdrop = cs.backdropFilter && cs.backdropFilter !== "none";
-      const b = conv(r, ctx.layer);
-      if (tag === "hr") {
-        const c = sides[0] ? sides[0].c : alphaOf(bgc) > 0.01 ? bgc : "rgb(200,200,200)";
-        const y = b.y + b.h / 2;
-        lineItem([{ x: b.x, y }, { x: b.x + b.w, y }], c, Math.max(1, Math.min(b.h, 2)), null, ctx, key);
-        return null;
-      }
-      const sameAsPage = alphaOf(bgc) > 0.01 && sameColor(bgc, under) && bgi === "none";
-      if (!forceRect && !bgVisible && !shadow && !backdrop) {
-        if (nb === 0) return null;
-        if (nb < 4) {
-          for (const sd of sides) {
-            if (!sd) continue;
-            const hw = sd.w / 2;
-            let pts;
-            if (sd.s === "top") pts = [{ x: b.x, y: b.y + hw }, { x: b.x + b.w, y: b.y + hw }];
-            else if (sd.s === "bottom") pts = [{ x: b.x, y: b.y + b.h - hw }, { x: b.x + b.w, y: b.y + b.h - hw }];
-            else if (sd.s === "left") pts = [{ x: b.x + hw, y: b.y }, { x: b.x + hw, y: b.y + b.h }];
-            else pts = [{ x: b.x + b.w - hw, y: b.y }, { x: b.x + b.w - hw, y: b.y + b.h }];
-            const dash = sd.st === "dashed" ? `${sd.w * 3} ${sd.w * 2}` : sd.st === "dotted" ? `${sd.w} ${sd.w * 1.5}` : null;
-            lineItem(pts, sd.c, sd.w, dash, ctx, key);
-          }
-          return null;
-        }
-      }
-      if (sameAsPage && nb === 0 && !shadow && !backdrop && !forceRect) return null;
-      const cssText = styleString(cs, RECT_PROPS) + (turn ? `rotate:${turn.deg}deg;` : "");
-      return add({
-        kind: "rect",
-        blend: cs.mixBlendMode !== "normal" ? cs.mixBlendMode : ctx.blend || "",
-        big: b.w * b.h > vw * vh * 0.4,
-        ...b,
-        css: cssText,
-        radius: cs.borderRadius,
-        draw: null,
-        styled: false,
-        layer: ctx.layer,
-        key,
-        op: ctx.op,
-        clip: clipFor(r, ctx.clip, ctx.layer),
-        parentBox: ctx.boxItem,
-        sig: cssText,
-      });
-    }
-
-    // Decorative ::before/::after on containers (overlays, glows, standalone icons).
-    // Their boxes aren't exposed, so derive them from the host box and the pseudo's insets.
-    const PSEUDO_EL = { localName: "pseudo" };
-    function emitPseudoBox(el, cs, r, ctx, which, empty) {
-      const ps = getComputedStyle(el, which);
-      const c = ps.content;
-      if (!c || c === "none" || c === "normal" || ps.display === "none" || ps.visibility !== "visible") return;
-      const pop = parseFloat(ps.opacity);
-      if (!(pop > 0.03)) return;
-      const n = (v) => parseFloat(v) || 0;
-      const w = parseFloat(ps.width);
-      const h = parseFloat(ps.height);
-      if (!(w > 0 && h > 0)) return;
-      const pad = {
-        l: r.left + n(cs.borderLeftWidth), t: r.top + n(cs.borderTopWidth),
-        r: r.right - n(cs.borderRightWidth), b: r.bottom - n(cs.borderBottomWidth),
+    // An element's own running text: line boxes, letter edges and the inline elements
+    // that carry it (links, spans, split-text letters), all relative to its box.
+    text(el, r, cs, budget) {
+      const nodes = [];
+      const flow = [];
+      const inFlow = (n) => {
+        for (let p = n.parentElement; p && p !== el; p = p.parentElement) if (!isInlineLevel(cs(p).display)) return false;
+        return true;
       };
-      // a turned pseudo (border-drawn chevrons and arrows) is drawn as a turned box
-      let turn = null;
-      const pl = linOf(ps);
-      if (pl) {
-        const k = Math.hypot(pl[0], pl[1]);
-        const deg = (Math.atan2(pl[1], pl[0]) * 180) / Math.PI;
-        if (k > 0 && Math.abs(pl[0] - pl[3]) < 1e-3 * k && Math.abs(pl[1] + pl[2]) < 1e-3 * k && Math.abs(deg) >= 0.5) turn = { deg: f1(deg), k };
-      }
-      const bb = ps.boxSizing === "border-box";
-      const outerW = bb ? w : w + n(ps.paddingLeft) + n(ps.paddingRight) + n(ps.borderLeftWidth) + n(ps.borderRightWidth);
-      const outerH = bb ? h : h + n(ps.paddingTop) + n(ps.paddingBottom) + n(ps.borderTopWidth) + n(ps.borderBottomWidth);
-      let L;
-      let T;
-      if (ps.position === "absolute") {
-        if (cs.position === "static") return; // containing block is some other ancestor
-        // (with box-sizing: border-box the computed width already includes padding and border)
-        const bw = outerW;
-        const bh = outerH;
-        L = ps.left !== "auto" ? pad.l + n(ps.left) : ps.right !== "auto" ? pad.r - n(ps.right) - bw : pad.l;
-        T = ps.top !== "auto" ? pad.t + n(ps.top) : ps.bottom !== "auto" ? pad.b - n(ps.bottom) - bh : pad.t;
-        let fake = { left: L, top: T, right: L + bw, bottom: T + bh, width: bw, height: bh };
-        if (ps.transform && ps.transform !== "none") {
-          // the pseudo's own transform (scale, shift) about its transform-origin -> bounding box
-          try {
-            const m = new DOMMatrix(ps.transform);
-            const o = ps.transformOrigin.split(" ").map(parseFloat);
-            const ox0 = L + (o[0] || 0);
-            const oy0 = T + (o[1] || 0);
-            const pts = [[L, T], [L + bw, T], [L, T + bh], [L + bw, T + bh]].map(([x, y]) => {
-              const q = m.transformPoint(new DOMPoint(x - ox0, y - oy0));
-              return [q.x + ox0, q.y + oy0];
-            });
-            const xs = pts.map((p) => p[0]);
-            const ys = pts.map((p) => p[1]);
-            const l = Math.min(...xs);
-            const t = Math.min(...ys);
-            fake = { left: l, top: t, right: Math.max(...xs), bottom: Math.max(...ys), width: Math.max(...xs) - l, height: Math.max(...ys) - t };
-            if (turn) {
-              // turned: the real box, centred where the transform put it
-              const cx = (fake.left + fake.right) / 2;
-              const cy = (fake.top + fake.bottom) / 2;
-              const tw = bw * turn.k;
-              const th = bh * turn.k;
-              fake = { left: cx - tw / 2, top: cy - th / 2, right: cx + tw / 2, bottom: cy + th / 2, width: tw, height: th };
-            }
-          } catch (_) {}
+      const tw = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+      for (let n = tw.nextNode(); n; n = tw.nextNode()) if (/\S/.test(n.data) && inFlow(n)) nodes.push(n);
+      for (const d of el.querySelectorAll("*")) {
+        const s = cs(d);
+        if (MEDIA.has(d.localName) && d.localName !== "svg") continue;
+        if (isInlineLevel(s.display) && s.display !== "contents" && inFlow(d) && s.visibility === "visible") {
+          flow.push(d);
+          if (d.localName === "svg") for (const k of d.querySelectorAll("*")) flow.push(k);
         }
-        if (!curLoop && !intersect(ltrb(fake), ctx.clip)) return;
-        emitBox(PSEUDO_EL, ps, fake, { ...ctx, op: ctx.op * pop }, ctx.key(), !!turn, turn);
-      } else {
-        const cl = pad.l + n(cs.paddingLeft);
-        const ct = pad.t + n(cs.paddingTop);
-        const cw = pad.r - n(cs.paddingRight) - cl;
-        const ch = pad.b - n(cs.paddingBottom) - ct;
-        const align = (ps.alignSelf !== "auto" ? ps.alignSelf : cs.alignItems) || "";
-        const vAlign = () => (/center/.test(align) ? ct + (ch - h) / 2 : /end/.test(align) ? ct + ch - h : ct);
-        if (empty) {
-          // the only content of an icon-ish element: centre it in the content box
-          L = cl + Math.max(0, (cw - w) / 2);
-          T = ct + Math.max(0, (ch - h) / 2);
-        } else if (/flex/.test(cs.display) && /^row/.test(cs.flexDirection)) {
-          // icon before the first / after the last item of a flex row (chevrons, arrows)
-          const kidsR = [...el.children]
-            .filter((k) => css(k).display !== "none" && css(k).position !== "absolute" && css(k).position !== "fixed")
-            .map((k) => k.getBoundingClientRect())
-            .filter((k) => k.width || k.height);
-          if (!kidsR.length) return;
-          const gap = n(cs.columnGap);
-          if (which === "::after") L = kidsR[kidsR.length - 1].right + gap + n(ps.marginLeft);
-          else L = kidsR[0].left - gap - n(ps.marginRight) - w;
-          T = vAlign();
-        } else return;
-        const fake = { left: L, top: T, right: L + outerW, bottom: T + outerH, width: outerW, height: outerH };
-        if (!curLoop && !intersect(ltrb(fake), ctx.clip)) return;
-        emitBox(PSEUDO_EL, ps, fake, { ...ctx, op: ctx.op * pop }, ctx.key(), !!turn, turn);
       }
-    }
-
-    function mediaFor(el, cs, r) {
-      const tag = el.localName;
-      const fit = `object-fit:${cs.objectFit};object-position:${cs.objectPosition};`;
-      if (tag === "img") {
-        const src = imgSrc(el);
-        if (!src) return null;
-        const m = document.createElement("img");
-        m.src = src;
-        m.decoding = "async";
-        m.setAttribute("style", fit + "display:block;");
-        m.draggable = false;
-        return { el: m, sig: src };
-      }
-      if (tag === "svg") {
-        const m = cloneStyled(el);
-        m.setAttribute("width", "100%");
-        m.setAttribute("height", "100%");
-        m.style.display = "block";
-        m.style.overflow = "visible";
-        m.style.margin = "0";
-        m.style.position = "static";
-        // the box we draw is the transformed bounding box; keep only a pure rotation/flip
-        const mt = cs.transform.match(/^matrix\(([^)]+)\)$/);
-        const k = mt ? mt[1].split(",").map(Number) : null;
-        m.style.transform = k && Math.abs(Math.hypot(k[0], k[1]) - 1) < 0.02 && Math.abs(Math.hypot(k[2], k[3]) - 1) < 0.02 ? `matrix(${k[0]},${k[1]},${k[2]},${k[3]},0,0)` : "none";
-        m.style.transformOrigin = "50% 50%";
-        const h = m.outerHTML;
-        return { el: m, sig: h.length + ":" + h.slice(0, 160) };
-      }
-      const imgOf = (src, extra) => {
-        const m = document.createElement("img");
-        m.src = src;
-        m.setAttribute("style", (extra || "") + "display:block;width:100%;height:100%;");
-        m.draggable = false;
-        return { el: m, sig: src.slice(0, 120) + src.length };
-      };
-      if (tag === "canvas") {
-        // Pixels read right after the page drew its frame (works for WebGL too), else the
-        // click-time screenshot. If the page keeps drawing, the rebuild mirrors it live.
-        const g = canvases.get(el);
-        const still = (g && g.url) || cropShot(shot, r) || canvasPixels(el);
-        if (g && g.live) {
-          const m = document.createElement("canvas");
-          m.width = el.width;
-          m.height = el.height;
-          m.setAttribute("style", "display:block;width:100%;height:100%;" + (still ? `background:url("${still}") center/100% 100% no-repeat;` : ""));
-          return { el: m, sig: "canvas:" + el.width + "x" + el.height + ":" + (still || "").length, liveSrc: el };
+      const rects = [];
+      const chars = [];
+      const rg = document.createRange();
+      for (const n of nodes) {
+        rg.selectNodeContents(n);
+        for (const q of rg.getClientRects()) if (q.width > 0.5 && q.height > 0.5) rects.push(q);
+        if (budget.left > 0) {
+          const s = n.data;
+          for (let i = 0; i < s.length; i++) {
+            if (/\s/.test(s[i]) && (i === 0 || /\s/.test(s[i - 1]))) continue;
+            rg.setStart(n, i);
+            rg.setEnd(n, i + 1);
+            const q = rg.getBoundingClientRect();
+            if (q.width > 0 || q.height > 0) chars.push(q);
+          }
+          budget.left -= s.length;
         }
-        return still ? imgOf(still) : null;
       }
-      if (tag === "iframe" || tag === "embed" || tag === "object") {
-        const crop = cropShot(shot, r);
-        if (crop) return imgOf(crop);
+      rects.sort((a, b) => a.top - b.top || a.left - b.left);
+      const lines = [];
+      for (const q of rects) {
+        const last = lines[lines.length - 1];
+        const mid = q.top + q.height / 2;
+        if (last && mid > last.t && mid < last.b) {
+          last.l = Math.min(last.l, q.left);
+          last.r = Math.max(last.r, q.right);
+          last.t = Math.min(last.t, q.top);
+          last.b = Math.max(last.b, q.bottom);
+        } else lines.push({ l: q.left, r: q.right, t: q.top, b: q.bottom, edges: [] });
       }
-      if (tag === "video") {
-        // Cross-origin video can't be read back as pixels once it's off-screen, so
-        // rebuild it as a real (muted) video in the state the original was in.
-        const crop = cropShot(shot, r);
-        const url = videoUrl(el);
-        if (url) {
-          const v = document.createElement("video");
-          v.setAttribute("src", url);
-          v.setAttribute("muted", "");
-          v.setAttribute("playsinline", "");
-          v.setAttribute("preload", "auto");
-          if (el.loop || el.autoplay || !el.paused) v.setAttribute("loop", "");
-          if (!el.paused || el.autoplay) v.setAttribute("data-play", "");
-          if (el.crossOrigin) v.setAttribute("crossorigin", el.crossOrigin);
-          if (el.currentTime > 0) v.setAttribute("data-t", String(el.currentTime));
-          const poster = crop || el.poster;
-          if (poster) v.setAttribute("poster", poster);
-          v.setAttribute("style", fit + "display:block;width:100%;height:100%;");
-          return { el: v, sig: url };
+      if (!lines.length) return null;
+      if (chars.length) {
+        for (const q of chars) {
+          const mid = q.top + q.height / 2;
+          const L = lines.find((l) => mid >= l.t - 1 && mid <= l.b + 1);
+          if (L) L.edges.push(q.right);
         }
-        if (crop) return imgOf(crop);
-        let src = el.poster || "";
-        if (!src && el.videoWidth) {
-          try {
-            const c = document.createElement("canvas");
-            c.width = el.videoWidth;
-            c.height = el.videoHeight;
-            c.getContext("2d").drawImage(el, 0, 0);
-            src = c.toDataURL("image/jpeg", 0.82);
-          } catch (_) {}
+      }
+      const fs = parseFloat(cs(el).fontSize) || 16;
+      const out = lines.map((L) => {
+        let e = L.edges.sort((a, b) => a - b);
+        if (!e.length) {
+          // estimate letters for text past the exact-measurement budget
+          const n = Math.max(1, Math.round((L.r - L.l) / (fs * 0.52)));
+          e = Array.from({ length: n }, (_, i) => L.l + ((L.r - L.l) * (i + 1)) / n);
         }
-        if (src) {
-          const m = document.createElement("img");
-          m.src = src;
-          m.setAttribute("style", fit + "display:block;");
-          return { el: m, sig: src.slice(0, 200) };
-        }
-        const d = document.createElement("div");
-        d.setAttribute("style", "background:#111;");
-        return { el: d, sig: "video" };
-      }
-      // iframe / embed / object
-      const d = document.createElement("div");
-      let host = "";
-      try {
-        host = new URL(el.src || el.data || "", location.href).hostname.replace(/^www\./, "");
-      } catch (_) {}
-      d.setAttribute(
-        "style",
-        "background:#F1F2F4;display:flex;align-items:center;justify-content:center;font:500 12px/1.2 system-ui,sans-serif;color:#8A8F98;letter-spacing:.01em;",
-      );
-      d.textContent = host || "embed";
-      return { el: d, sig: "frame:" + host };
-    }
-
-    function emitMedia(el, cs, r, ctx, key) {
-      let src = el;
-      let scs = cs;
-      if (el.localName === "picture") {
-        src = el.querySelector("img");
-        if (!src) return;
-        scs = css(src);
-      }
-      const turn = turnOf(src, ctx);
-      if (turn) r = unturn(r, turn);
-      const m = mediaFor(src, scs, r);
-      if (!m) return;
-      if (turn) m.el.style.rotate = turn.deg + "deg";
-      const b = conv(r, ctx.layer);
-      // an image filling a rounded, clipping frame takes the frame's corners; one that
-      // overflows it gets them through its clip instead
-      let radius = cs.borderRadius;
-      const rd = ctx.round;
-      if (rd && !/[1-9]/.test(radius)) {
-        const near = (a, c) => Math.abs(a - c) < 3;
-        if (near(r.left, rd.r.left) && near(r.top, rd.r.top) && near(r.right, rd.r.right) && near(r.bottom, rd.r.bottom)) radius = rd.radius;
-      }
-      add({
-        kind: "image",
-        ...b,
-        blend: cs.mixBlendMode !== "normal" ? cs.mixBlendMode : ctx.blend || "",
-        media: m.el,
-        liveSrc: m.liveSrc || null,
-        frame: styleString(cs, ["border-top-width", "border-right-width", "border-bottom-width", "border-left-width", "border-top-style", "border-right-style", "border-bottom-style", "border-left-style", "border-top-color", "border-right-color", "border-bottom-color", "border-left-color"]),
-        radius,
-        shadow: cs.boxShadow !== "none" ? cs.boxShadow : "",
-        bg: alphaOf(cs.backgroundColor) > 0.01 ? cs.backgroundColor : "",
-        draw: null,
-        styled: false,
-        layer: ctx.layer,
-        key,
-        op: ctx.op,
-        clip: clipFor(r, ctx.clip, ctx.layer),
-        parentBox: ctx.boxItem,
-        sig: m.sig,
+        return { x: L.l - r.left, y: L.t - r.top, w: L.r - L.l, h: L.b - L.t, edges: e.map((x) => x - r.left) };
       });
+      return { lines: out, flow, total: out.reduce((n, L) => n + L.edges.length, 0) };
     }
 
-    function emitForm(el, cs, r, ctx, key) {
-      const tag = el.localName;
-      const type = (el.getAttribute("type") || "").toLowerCase();
-      if (type === "hidden") return;
-      const b = conv(r, ctx.layer);
-      if (tag === "input" && (type === "checkbox" || type === "radio")) {
-        const accent = cs.accentColor && cs.accentColor !== "auto" ? cs.accentColor : "#0B6CFF";
-        const s = document.createElementNS(SVGNS, "svg");
-        s.setAttribute("viewBox", "0 0 16 16");
-        s.setAttribute("width", "100%");
-        s.setAttribute("height", "100%");
-        const on = el.checked;
-        s.innerHTML =
-          type === "radio"
-            ? `<circle cx="8" cy="8" r="7" fill="#fff" stroke="${on ? accent : "#767676"}" stroke-width="1.2"/>${on ? `<circle cx="8" cy="8" r="4" fill="${accent}"/>` : ""}`
-            : `<rect x="1" y="1" width="14" height="14" rx="2.5" fill="${on ? accent : "#fff"}" stroke="${on ? accent : "#767676"}" stroke-width="1.2"/>${on ? '<path d="M4.2 8.3 L7 11 L12 5.4" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>' : ""}`;
-        add({
-          kind: "image", ...b, media: s, frame: "", radius: "0px", shadow: "", bg: "",
-          draw: null, styled: false, layer: ctx.layer, key, op: ctx.op, clip: null,
-          parentBox: ctx.boxItem, sig: type + on,
-        });
-        return;
-      }
-      const boxIt = emitBox(el, cs, r, ctx, key, false);
-      let text;
-      let ph = false;
-      if (tag === "select") text = (el.selectedOptions && el.selectedOptions[0] && el.selectedOptions[0].text) || "";
-      else if (["submit", "button", "reset"].includes(type)) text = el.value || (type === "submit" ? "Submit" : type === "reset" ? "Reset" : "");
-      else if (type === "password") text = "•".repeat((el.value || "").length);
-      else if (["range", "color", "file", "image"].includes(type)) text = "";
-      else text = el.value || "";
-      if (!text && el.placeholder) {
-        text = el.placeholder;
-        ph = true;
-      }
-      if (!text.trim()) return;
-      const root = document.createElement("div");
-      const pad = (side) =>
-        (parseFloat(cs.getPropertyValue(`padding-${side}`)) || 0) + (parseFloat(cs.getPropertyValue(`border-${side}-width`)) || 0);
-      const isButton = ["submit", "button", "reset"].includes(type);
-      let st = styleString(cs, TEXT_PROPS);
-      st += `padding:${pad("top")}px ${pad("right")}px ${pad("bottom")}px ${pad("left")}px;margin:0;box-sizing:border-box;width:100%;height:100%;overflow:hidden;`;
-      st += tag === "textarea" ? "display:block;white-space:pre-wrap;" : `display:flex;align-items:center;white-space:pre;${isButton ? "justify-content:center;" : ""}`;
-      if (ph) st += `color:${getComputedStyle(el, "::placeholder").color};-webkit-text-fill-color:currentColor;`;
-      root.setAttribute("style", st);
-      root.textContent = text;
-      textItem(
-        { ...b, layer: ctx.layer, key: key + 0.5, op: ctx.op, clip: clipFor(r, ctx.clip, ctx.layer), parentBox: boxIt || ctx.boxItem },
-        root,
-        { ...b },
-        cs,
-        ctx.layer,
-      );
+    // Walk the DOM and register what's new inside a band of the page (content px).
+    scan(band) {
+      return this.stage.peek(() => this.walk(band));
     }
 
-    function walk(el, ctx, parent) {
-      const lp = loops.get(el);
-      if (!lp) return walkEl(el, ctx, parent);
-      const prev = curLoop;
-      curLoop = lp;
-      loopChain.push(lp);
-      try {
-        walkEl(el, ctx, parent);
-      } finally {
-        curLoop = prev;
-        loopChain.pop();
-      }
-    }
+    walk(band) {
+      const env = this.env;
+      const v = env.view();
+      const top = env.top;
+      const toContent = (y) => y - v.y + top;
+      const out = [];
+      const cache = new Map();
+      const cs = (el) => {
+        let s = cache.get(el);
+        if (!s) {
+          s = getComputedStyle(el);
+          cache.set(el, s);
+        }
+        return s;
+      };
+      const html = document.documentElement;
+      const body = document.body;
+      const budget = { left: CHAR_BUDGET };
 
-    function walkEl(el, ctx, parent) {
-      if (items.length >= MAX_ITEMS) return;
-      const tag = el.localName;
-      if (SKIP.has(tag) || el === env.host) return;
-      const cs = css(el);
-      const disp = cs.display;
-      if (disp === "none") return;
-      if (disp === "contents") {
-        // transparent wrapper (incl. <slot>): its loose text still renders, styled by it
-        let run = [];
-        const flushRun = () => {
-          if (ctx.key && run.some((n) => /\S/.test(n.data))) emitRun(el, cs, run, ctx);
-          run = [];
+      const make = (el, kind, r, s, parent, fixed, extra) => {
+        const u = {
+          id: this.count++, el, kind, parent, fixed,
+          state: 0, phase: 0, p: 0, typed: 0, color: PALETTE[this.count % PALETTE.length],
+          y: fixed ? -1e9 : toContent(r.top), w: r.width, h: r.height, top0: r.top, left0: r.left,
+          rad: radiiOf(s, r.width, r.height), label: "", lead: null,
+          ...extra,
         };
-        for (const c of kidsOf(el)) {
-          if (c.nodeType === 3) run.push(c);
-          else if (c.nodeType === 1) {
-            flushRun();
-            walk(c, ctx, parent);
-          }
+        if (kind === "box" && r.width * r.height > 9000) u.label = `${nameOf(el, kind)}  ${Math.round(r.width)} × ${Math.round(r.height)}`;
+        if (kind === "media" && r.width * r.height > 6000) u.label = `${nameOf(el, kind)}  ${Math.round(r.width)} × ${Math.round(r.height)}`;
+        for (let a = parent; a && u.label; a = a.parent) {
+          if (a.label && Math.abs(a.top0 - r.top) < 26 && Math.abs(a.left0 - r.left) < 120) u.label = "";
+          if (Math.abs(a.top0 - r.top) >= 26) break;
         }
-        flushRun();
-        return;
-      }
-      const op = ctx.op * parseFloat(cs.opacity);
-      if (!(op > 0.03)) return;
-      const r = el.getBoundingClientRect();
-      // "visually hidden" accessibility text: 1px boxes, clip:rect(0 0 0 0), clip-path:inset(50%)
-      // (html/body overflow belongs to the viewport, so a 0px-tall body clips nothing)
-      const clipsSelf = el !== html && el !== body && el !== env.scroller && cs.overflowX !== "visible" && cs.overflowY !== "visible";
-      if (clipsSelf && (r.width <= 2 || r.height <= 2)) return;
-      if (cs.position === "absolute" && /rect\(0px,? 0px,? 0px,? 0px\)/.test(cs.clip)) return;
-      if (/inset\(50%\)|circle\(0px/.test(cs.clipPath)) return;
-      if (cs.float !== "none" && r.width > 1 && r.height > 1) {
-        const n = (p) => parseFloat(cs.getPropertyValue(p)) || 0;
-        floats.push({ el, side: cs.float, l: r.left - n("margin-left"), t: r.top - n("margin-top"), r: r.right + n("margin-right"), b: r.bottom + n("margin-bottom") });
-      }
-      let layer = ctx.layer;
-      let clip = ctx.clip;
-      const pos = cs.position;
-      const ownLin = linOf(cs);
-      const lin = ownLin ? (ctx.lin ? mulLin(ctx.lin, ownLin) : ownLin) : ctx.lin || null;
-      if (pos === "fixed" && layer !== "over") {
-        layer = "over";
-        clip = viewClip;
-      } else if (pos === "sticky" && layer === "world") {
-        // stuck (or sitting exactly where it would stick) at the top of its scroller
-        const top = parseFloat(cs.top);
-        if (!isNaN(top) && Math.abs(r.top - oy - top) < 2 && r.height < vh * 0.4) {
-          layer = "over";
-          clip = viewClip;
-        }
-      }
-      // Paint order. Every key is a path through nested stacking contexts (turned into plain
-      // numbers after the walk), so a z-index inside a z-indexed section still counts.
-      // z-index applies to positioned boxes and to flex/grid items (even when static).
-      const pe = el.parentElement;
-      const flexItem = pos === "static" && pe && /flex|grid/.test(css(pe).display);
-      const zi = cs.zIndex === "auto" ? null : clamp(parseInt(cs.zIndex, 10) || 0, -1e5, 1e5);
-      const zCtx = zi != null && (pos !== "static" || flexItem);
-      const fxCtx =
-        el !== html &&
-        (parseFloat(cs.opacity) < 1 || transformed(cs) || cs.filter !== "none" || cs.isolation === "isolate" ||
-          cs.mixBlendMode !== "normal" || cs.clipPath !== "none" || (cs.webkitMaskImage && cs.webkitMaskImage !== "none") ||
-          pos === "fixed" || pos === "sticky");
-      const makesCtx = zCtx || fxCtx;
-      const posd = ctx.posd || pos !== "static";
-      // band within the parent context: negative z < normal flow < positioned / z:0 < positive z
-      const band = zCtx ? (zi < 0 ? zi : 1 + zi) : makesCtx || posd ? 1 : 0;
-      const zpath = ctx.zpath || [];
-      const ownPath = makesCtx ? [...zpath, band * 1e7 + order++] : null;
-      const keyFn = makesCtx ? () => tok([...ownPath, order++]) : () => tok([...zpath, band * 1e7 + order++]);
-      // a stacking context's own background paints beneath everything inside it
-      const boxKeyFn = makesCtx ? () => tok([...ownPath, -1e14 + order++]) : keyFn;
-      if (layer === "over" && ctx.layer !== "over" && r.top <= 4 && r.width >= vw * 0.8 && r.height > 20 && r.height <= 200) {
-        bars.push({ node: null, r, start: items.length, key: boxKeyFn() });
-      }
-      const isScroller = !env.isRoot && el === env.scroller;
-      const kidLayer = isScroller ? "world" : layer;
-      const box = conv(r, layer);
-      const visible = cs.visibility === "visible";
-      const sized = r.width >= 1 && r.height >= 1;
-      const emit = visible && sized && (!!curLoop || !!intersect(ltrb(r), clip)) && inDoc(box, layer);
-
-      const node = {
-        el, tag, cls: (el.getAttribute && el.getAttribute("class")) || "", layer,
-        start: items.length, end: items.length, kids: [], box,
+        out.push(u);
+        return u;
       };
-      (parent ? parent.kids : roots).push(node);
 
-      if (REPLACED.has(tag) || FORMS.has(tag)) {
-        if (emit) {
-          if (FORMS.has(tag)) emitForm(el, cs, r, { ...ctx, layer, clip, op, lin }, boxKeyFn());
-          else emitMedia(el, cs, r, { ...ctx, layer, clip, op, lin }, boxKeyFn());
-        }
-        node.end = items.length;
-        return;
-      }
-
-      let boxItem = ctx.boxItem;
-      if (emit) {
-        const b = emitBox(el, cs, r, { ...ctx, layer, clip, op, lin }, boxKeyFn(), false);
-        if (b) boxItem = b;
-      }
-
-      let kidClip = clip;
-      if (isScroller) {
-        kidClip = fullClip;
-        portKey = keyFn();
-      }
-      else if (el !== html && el !== body && (cs.overflowX !== "visible" || cs.overflowY !== "visible")) {
-        const bl = parseFloat(cs.borderLeftWidth) || 0;
-        const bt = parseFloat(cs.borderTopWidth) || 0;
-        const br = parseFloat(cs.borderRightWidth) || 0;
-        const bb = parseFloat(cs.borderBottomWidth) || 0;
-        kidClip = intersect(clip, { l: r.left + bl, t: r.top + bt, r: r.right - br, b: r.bottom - bb });
-        if (!kidClip) {
-          node.end = items.length;
+      // under: the solid colour painted behind this element, or null over images/gradients
+      const visit = (el, parent, fixed, under, inFlow) => {
+        if (this.count >= MAX_UNITS) return;
+        const tag = el.localName;
+        if (SKIP.has(tag) || el === this.host || el.hasAttribute(GHOST)) return;
+        const s = cs(el);
+        const d = s.display;
+        if (d === "none") return;
+        if (d === "contents") {
+          for (const k of el.children) visit(k, parent, fixed, under, inFlow);
           return;
         }
-      }
-      const blend = cs.mixBlendMode !== "normal" ? cs.mixBlendMode : ctx.blend;
-      // a rounded box that clips (avatar frames, image cards): media inside gets its corners
-      let round = ctx.round || null;
-      if (kidClip !== clip && /[1-9]/.test(cs.borderRadius)) {
-        round = { r, radius: cs.borderRadius };
-        const corner = (v) => parseFloat(v) || 0; // horizontal radius is close enough
-        roundFrames.push({
-          layer: kidLayer,
-          c: convClip(kidClip, kidLayer),
-          k: [cs.borderTopLeftRadius, cs.borderTopRightRadius, cs.borderBottomRightRadius, cs.borderBottomLeftRadius].map(corner),
-        });
-      }
-      // what kids sit on: this box's colour if it paints an opaque one
-      const under = el !== html && alphaOf(cs.backgroundColor) > 0.99 && cs.backgroundImage === "none" && pos !== "absolute" && pos !== "fixed" ? cs.backgroundColor : ctx.under;
-      const kctx = { op, layer: kidLayer, clip: kidClip, zpath: makesCtx ? ownPath : zpath, posd: makesCtx ? false : posd, boxItem, key: keyFn, blend, lin, round, under };
-
-      // Decide: one text leaf, or a mix of text runs and nested blocks.
-      // Closed <details> and content-visibility:hidden still report real boxes for
-      // content that isn't painted, so only the summary (or nothing) gets built.
-      if (cs.contentVisibility === "hidden") {
-        node.end = items.length;
-        return;
-      }
-      let kids = kidsOf(el);
-      if (tag === "details" && !el.open) {
-        const sum = kids.find((n) => n.nodeType === 1 && n.localName === "summary");
-        kids = sum ? [sum] : [];
-      }
-      const emptyEl = !kids.some((k) => (k.nodeType === 3 && /\S/.test(k.data)) || k.nodeType === 1);
-      const pctx = { ...kctx, layer, clip };
-      const directText = kids.some((n) => n.nodeType === 3 && /\S/.test(n.data));
-      const kinds = [];
-      let allRun = !el.shadowRoot;
-      let anyText = directText;
-      for (const n of kids) {
-        if (n.nodeType === 3) {
-          kinds.push(1);
-          continue;
+        if (parseFloat(s.opacity) < 0.04) return;
+        const isFixed = fixed || s.position === "fixed" || s.position === "sticky" || !env.owns(el);
+        const r = el.getBoundingClientRect();
+        let inBand = true;
+        if (!isFixed) {
+          const y0 = toContent(r.top);
+          const y1 = toContent(r.bottom);
+          inBand = y1 > band.top && y0 < band.bottom;
         }
-        if (n.nodeType !== 1 || SKIP.has(n.localName)) {
-          kinds.push(0);
-          continue;
-        }
-        const d = css(n).display;
-        if (d === "none") {
-          kinds.push(0);
-          continue;
-        }
-        let inl = false;
-        const nt = n.localName;
-        if (n.shadowRoot || nt === "slot") inl = false;
-        else if (nt === "br" || nt === "wbr") inl = true;
-        else if (d === "inline") inl = allInline(n);
-        else if (directText && d.startsWith("inline")) inl = true;
-        else if (splitPiece(n, d)) inl = true;
-        if (inl && !anyText && /\S/.test(n.textContent)) anyText = true;
-        kinds.push(inl ? 1 : 2);
-        if (!inl) allRun = false;
-      }
-
-      const glyph = emptyEl && (glyphOf(el, "::before") || glyphOf(el, "::after"));
-      if (allRun && (anyText || glyph) && !isScroller) {
-        if (visible && sized && emit) emitLeaf(el, cs, r, { ...kctx, layer }, keyFn());
-        node.end = items.length;
-        return;
-      }
-      // (text leaves carry their pseudos inside the clone instead)
-      if (emit && visible) emitPseudoBox(el, cs, r, pctx, "::before", emptyEl);
-      const afterPseudo = () => {
-        if (emit && visible) emitPseudoBox(el, cs, r, pctx, "::after", emptyEl);
-      };
-
-      let run = [];
-      const flush = () => {
-        if (!run.length) return;
-        const hasText = run.some((n) => (n.nodeType === 3 ? /\S/.test(n.data) : /\S/.test(n.textContent)));
-        if (hasText) {
-          if (visible) emitRun(el, cs, run, kctx);
-        } else {
-          for (const n of run) if (n.nodeType === 1) walk(n, kctx, node);
-        }
-        run = [];
-      };
-      kids.forEach((n, i) => {
-        if (kinds[i] === 1) run.push(n);
-        else if (kinds[i] === 2) {
-          flush();
-          walk(n, kctx, node);
-        }
-      });
-      flush();
-      afterPseudo();
-      node.end = items.length;
-    }
-
-    const rootLayer = env.isRoot ? "world" : "under";
-    const rootClip = env.isRoot ? fullClip : viewClip;
-    walk(html, { op: 1, layer: rootLayer, clip: rootClip, zpath: [], posd: false, boxItem: null }, null);
-
-    // Content cut off by a rounded frame (a hero image spilling past a section's rounded
-    // corner): give its clip those corners, but only where its visible part meets them.
-    if (roundFrames.length) {
-      const near = (a, b) => Math.abs(a - b) < 1.5;
-      for (const it of [...items, ...riders]) {
-        const c = it.clip;
-        if (it.kind === "line") continue;
-        if (!c) {
-          // fully inside a rounded frame but reaching into one of its corners (a dark column
-          // running down to a section's rounded corner): round just those corners
-          if (/[1-9]/.test(it.radius || "")) continue;
-          const R = it.x + it.w;
-          const B = it.y + it.h;
-          for (const q of roundFrames) {
-            if (q.layer !== it.layer || it.x < q.c.l - 1.5 || it.y < q.c.t - 1.5 || R > q.c.r + 1.5 || B > q.c.b + 1.5) continue;
-            const k = [
-              near(it.x, q.c.l) && near(it.y, q.c.t) ? q.k[0] : 0,
-              near(R, q.c.r) && near(it.y, q.c.t) ? q.k[1] : 0,
-              near(R, q.c.r) && near(B, q.c.b) ? q.k[2] : 0,
-              near(it.x, q.c.l) && near(B, q.c.b) ? q.k[3] : 0,
-            ];
-            if (k.some((x) => x > 0)) {
-              it.clipRound = k.map((x) => f1(x) + "px").join(" ");
-              break;
+        const show = s.visibility === "visible" && r.width >= 2 && r.height >= 2 && inBand;
+        const isMedia = MEDIA.has(tag);
+        const isControl = CONTROL.has(tag);
+        let boxUnit = this.boxOf.get(el) || null;
+        let madeText = false;
+        const flowPiece = inFlow && isInlineLevel(d);
+        if (show && !this.seen.has(el) && !flowPiece) {
+          this.seen.add(el);
+          if (isMedia) {
+            make(el, "media", r, s, parent, isFixed);
+            return;
+          }
+          if (isControl) {
+            if ((el.getAttribute("type") || "").toLowerCase() !== "hidden") make(el, "control", r, s, parent, isFixed);
+            return;
+          }
+          const inline = d === "inline";
+          if (!inline && paintsBox(s, under)) {
+            boxUnit = make(el, "box", r, s, parent, isFixed);
+            this.boxOf.set(el, boxUnit);
+          }
+          if (!inline) {
+            let hasText = false;
+            for (const n of el.childNodes) {
+              if (n.nodeType === 3 ? /\S/.test(n.data) : n.nodeType === 1 && isInlineLevel(cs(n).display) && !MEDIA.has(n.localName) && /\S/.test(n.textContent)) {
+                hasText = true;
+                break;
+              }
+            }
+            if (hasText) {
+              const t = this.text(el, r, cs, budget);
+              if (t) {
+                // how to type it: clip the element to the letters so far, unless the
+                // element paints its own box (a button) - then reveal by colour
+                const mode = boxUnit && boxUnit.el === el ? "fade" : "clip";
+                // block children (a heading inside a wrapper that also has a line of its
+                // own text) stay outside the typing clip: they appear on their own schedule
+                const keep = [];
+                if (mode === "clip") {
+                  for (const c of el.children) {
+                    if (SKIP.has(c.localName)) continue;
+                    const d2 = cs(c).display;
+                    if (d2 === "none" || isInlineLevel(d2)) continue;
+                    const q = c.getBoundingClientRect();
+                    if (q.width >= 1 && q.height >= 1) keep.push({ x: q.left - r.left - 2, y: q.top - r.top - 2, w: q.width + 4, h: q.height + 4 });
+                  }
+                }
+                make(el, "text", r, s, boxUnit || parent, isFixed, {
+                  lines: t.lines, flow: t.flow, total: t.total, mode, keep, fs: parseFloat(s.fontSize) || 16,
+                  ink: s.color, caretColor: s.color,
+                });
+                madeText = true;
+                this.flowRoots.add(el);
+              }
+            } else if (!el.firstElementChild && r.width <= 96 && r.height <= 96 && !/\S/.test(el.textContent)) {
+              for (const w of ["::before", "::after"]) {
+                const ps = getComputedStyle(el, w);
+                if (ps.display !== "none" && /^"(.+)"$/.test(ps.content || "")) {
+                  make(el, "glyph", r, s, boxUnit || parent, isFixed);
+                  break;
+                }
+              }
             }
           }
-          continue;
-        }
-        const f = roundFrames.find((q) => q.layer === it.layer && near(q.c.l, c.l) && near(q.c.t, c.t) && near(q.c.r, c.r) && near(q.c.b, c.b));
-        if (!f) continue;
-        const v = intersect({ l: it.x, t: it.y, r: it.x + it.w, b: it.y + it.h }, c);
-        if (!v) continue;
-        const k = [
-          near(v.l, c.l) && near(v.t, c.t) ? f.k[0] : 0,
-          near(v.r, c.r) && near(v.t, c.t) ? f.k[1] : 0,
-          near(v.r, c.r) && near(v.b, c.b) ? f.k[2] : 0,
-          near(v.l, c.l) && near(v.b, c.b) ? f.k[3] : 0,
-        ];
-        if (k.some((x) => x > 0)) it.clipRound = k.map((x) => f1(x) + "px").join(" ");
-      }
-    }
-
-    // stacking paths -> sortable numbers (fractions such as a form's text at key + 0.5 survive)
-    {
-      const cmp = (a, b) => {
-        for (let i = 0; i < a.length && i < b.length; i++) if (a[i] !== b[i]) return a[i] - b[i];
-        return a.length - b.length;
+        } else if (isMedia || isControl) return;
+        if (isMedia || isControl) return;
+        const bg = s.backgroundColor;
+        let kidUnder = under;
+        if (s.backgroundImage && s.backgroundImage !== "none") kidUnder = null;
+        else if (alphaOf(bg) > 0.99) kidUnder = bg;
+        else if (alphaOf(bg) > 0.03) kidUnder = null;
+        const kidParent = boxUnit || parent;
+        const kidFlow = madeText || flowPiece || this.flowRoots.has(el);
+        for (const k of el.children) visit(k, kidParent, isFixed, kidUnder, kidFlow);
+        if (el.shadowRoot) for (const k of el.shadowRoot.children) visit(k, kidParent, isFixed, kidUnder, kidFlow);
       };
-      const idx = keyPaths.map((_, i) => i).sort((a, b) => cmp(keyPaths[a], keyPaths[b]));
-      const rank = new Float64Array(keyPaths.length);
-      idx.forEach((k, i) => (rank[k] = i));
-      const rk = (k) => {
-        const f = Math.floor(k);
-        return (rank[f] || 0) + (k - f);
-      };
-      for (const it of items) it.key = rk(it.key);
-      for (const it of riders) it.key = rk(it.key);
-      for (const b of bars) b.key = rk(b.key);
-      if (portKey != null) portKey = rk(portKey);
-    }
 
-    // --------------------------------------------- repeated components (dup)
-    const groups = [];
-    const kindsSig = (n) => {
-      let s = "";
-      for (let i = n.start; i < n.end; i++) s += items[i].kind[0];
-      return s;
-    };
-    const similar = (a, b, loose) =>
-      a.w > 0 && b.w > 0 && a.h > 0 && b.h > 0 && a.h / b.h < 1.8 && b.h / a.h < 1.8 && (loose || (a.w / b.w < 1.6 && b.w / a.w < 1.6));
-    function findGroups(node, inCopy) {
-      if (inCopy) return;
-      const buckets = new Map();
-      for (const k of node.kids) {
-        const n = k.end - k.start;
-        if (n < 1 || n > 48) continue;
-        // long single paragraphs read better typed than duplicated
-        if (n === 1 && items[k.start].kind === "text" && items[k.start].text.length > 40) continue;
-        const sig = `${k.tag}|${k.cls}|${k.layer}|${kindsSig(k)}`;
-        if (!buckets.has(sig)) buckets.set(sig, []);
-        buckets.get(sig).push(k);
-      }
-      const copies = new Set();
-      for (const list of buckets.values()) {
-        if (list.length < 2) continue;
-        const m = list[0];
-        const loose = m.end - m.start === 1 && items[m.start].kind === "text";
-        const members = list.filter((k) => similar(k.box, m.box, loose));
-        if (members.length < 2) continue;
-        const g = { id: groups.length, master: members[0], copies: members.slice(1) };
-        groups.push(g);
-        for (const c of g.copies) copies.add(c);
-      }
-      for (const k of node.kids) findGroups(k, copies.has(k));
-    }
-    for (const r of roots) findGroups(r, false);
-
-    for (const g of groups) {
-      for (const c of g.copies) {
-        for (let i = c.start; i < c.end; i++) {
-          const it = items[i];
-          if (it.copyOf) continue;
-          it.copyOf = items[g.master.start + (i - c.start)];
-          it.group = g;
+      let pageBg = "rgb(255, 255, 255)";
+      for (const e of [body, html]) {
+        if (e && alphaOf(cs(e).backgroundColor) > 0.5) {
+          pageBg = cs(e).backgroundColor;
+          break;
         }
       }
+      if (body) for (const k of body.children) visit(k, null, false, pageBg, false);
+      return out;
     }
 
-    const twinKey = new Map();
-    for (const it of items) {
-      if (it.kind !== "text" || it.copyOf || !it.text) continue;
-      const k = `${it.layer}|${Math.round(it.tb.x / 4)}|${Math.round(it.tb.y / 4)}|${it.text}`;
-      const m = twinKey.get(k);
-      if (m) it.twinOf = m;
-      else twinKey.set(k, it);
-    }
-
-    // ------------------------------------------------------------- tasks
-    const tasks = [];
-    const mk = (y, spec, deps, layer) => {
-      const t = { id: tasks.length, y, spec, deps, state: "wait", doneAt: 0, layer };
-      tasks.push(t);
-      return t;
-    };
-    const KIND_TASK = { rect: "rect", image: "image", text: "text", line: "line" };
-    for (const it of items) {
-      if (it.copyOf) continue;
-      if (it.twinOf) {
-        it.final = it.twinOf.final;
-        continue;
-      }
-      const deps = it.parentBox && it.parentBox.final ? it.parentBox.final : [];
-      const y = it.kind === "text" ? it.tb.y : it.y;
-      it.task = mk(y, { type: KIND_TASK[it.kind], it }, deps, it.layer);
-      it.final = [it.task];
-    }
-    // inner groups first so outer copies can wait for them
-    for (let gi = groups.length - 1; gi >= 0; gi--) {
-      const g = groups[gi];
-      const mItems = items.slice(g.master.start, g.master.end);
-      const masterFinals = [];
-      for (const it of mItems) if (it.final) masterFinals.push(...it.final);
-      if (g.master.start < g.master.end && items[g.master.start].parentBox && items[g.master.start].parentBox.final)
-        masterFinals.push(...items[g.master.start].parentBox.final);
-      g.src = { items: mItems, box: g.master.box };
-      g.dst = g.copies.map((c, k) => {
-        const its = items.slice(c.start, c.end).filter((it) => it.group === g);
-        const minY = Math.min(...its.map((it) => (it.kind === "text" ? it.tb.y : it.y)));
-        const task = mk(minY, { type: "dup", g, k }, masterFinals, c.layer);
-        for (const it of its) {
-          it.dupTask = task;
-          it.final = [task];
-          const m = it.copyOf;
-          let type = null;
-          if (it.kind === "text" && it.sig !== m.sig) type = "edit";
-          else if (it.kind === "image" && it.sig !== m.sig) type = "swap";
-          else if (it.kind === "rect" && it.sig !== m.sig) type = "restyle";
-          if (type) {
-            it.editTask = mk(it.kind === "text" ? it.tb.y : it.y, { type, it }, [task], it.layer);
-            it.final = [task, it.editTask];
-          }
+    // Everything still hidden on screen (decoration, wrappers, anything that isn't a
+    // unit of its own), top to bottom, for the end-of-screen sweep.
+    leftovers(vTop, vBottom) {
+      return this.stage.peek(() => {
+        const out = [];
+        const all = document.body ? document.body.getElementsByTagName("*") : [];
+        for (let i = 0; i < all.length && out.length < 4000; i++) {
+          const el = all[i];
+          if (el === this.host || SKIP.has(el.localName) || this.stage.shown(el) || el.closest(`[${GHOST}]`)) continue;
+          const r = el.getBoundingClientRect();
+          if (r.bottom < vTop || r.top > vBottom) continue;
+          out.push({ el, y: r.top });
         }
-        return { items: its, box: c.box, task };
+        return out.sort((a, b) => a.y - b.y);
       });
     }
-
-    // -------------------------------------------------- guides & snapping
-    const guides = [];
-    const texts = items.filter((it) => it.kind === "text" && it.task && it.layer === "world" && it.fs >= 13 && it.tb.w > 30);
-    const BAND = 900;
-    const bands = new Map();
-    for (const it of texts) {
-      const k = Math.floor(it.tb.y / BAND);
-      if (!bands.has(k)) bands.set(k, []);
-      bands.get(k).push(it);
-    }
-    for (const [, list] of [...bands.entries()].sort((a, b) => a[0] - b[0])) {
-      if (guides.length >= 16) break;
-      const byX = new Map();
-      for (const it of list) {
-        const x = Math.round(it.tb.x);
-        if (!byX.has(x)) byX.set(x, []);
-        byX.get(x).push(it);
-      }
-      let best = null;
-      for (const [x, l] of byX) if (l.length >= 3 && (!best || l.length > best[1].length)) best = [x, l];
-      if (best) {
-        const top = Math.min(...best[1].map((m) => m.tb.y));
-        const members = best[1].filter((m) => m.tb.y < top + 450).sort((a, b) => b.fs - a.fs).slice(0, 2);
-        const g = { axis: "x", pos: best[0], cur: best[0], op: 1, flash: 0, dragging: false, vis: false };
-        guides.push(g);
-        const gy = Math.min(...members.map((m) => m.tb.y)) - 30;
-        g.task = mk(gy, { type: "guide", g }, [], "world");
-        g.deps = [];
-        for (const m of members) {
-          m.task.spec.snap = g;
-          m.task.spec.snapDx = m.tb.x - best[0];
-          g.deps.push(m.task);
-        }
-      }
-      const byY = new Map();
-      for (const it of list) {
-        const y = Math.round(it.tb.y);
-        if (!byY.has(y)) byY.set(y, []);
-        byY.get(y).push(it);
-      }
-      let row = null;
-      for (const [y, l] of byY) if (l.length >= 3 && (!row || l.length > row[1].length)) row = [y, l];
-      if (row) {
-        const m = row[1].find((it) => !it.task.spec.snap);
-        if (m) {
-          const g = { axis: "y", pos: row[0], cur: row[0], op: 1, flash: 0, dragging: false, vis: false };
-          guides.push(g);
-          g.task = mk(row[0] - 30, { type: "guide", g }, [], "world");
-          g.deps = [m.task];
-          m.task.spec.snap = g;
-        }
-      }
-    }
-    for (const it of items) if (it.kind === "text" && it.task && it.fs >= 28 && it.tb.h < 400) it.task.spec.grow = true;
-    // deps always have lower ids, so one reverse pass propagates the earliest need
-    for (const t of tasks) t.gate = t.y;
-    for (let i = tasks.length - 1; i >= 0; i--) for (const d of tasks[i].deps) if (tasks[i].gate < d.gate) d.gate = tasks[i].gate;
-
-    // A sticky header that is transparent at the top of the page still needs
-    // something behind it once content scrolls underneath (sites add it on scroll).
-    const backdrops = [];
-    if (pageBg.image === "none")
-      for (const b of bars) {
-        const area = b.r.width * b.r.height;
-        const covered = items.some(
-          (it) => it.id >= b.start && it.layer === "over" && it.kind === "rect" && it.w * it.h >= area * 0.85 && /rgba?\(/.test(it.css) && !/background-color:\s*rgba\([^)]*,\s*0(\.\d+)?\)/.test(it.css),
-        );
-        if (!covered) backdrops.push({ x: b.r.left, y: b.r.top, w: b.r.width, h: b.r.height, key: b.key, color: pageBg.color });
-      }
-
-    // riders join last: they have no tasks and take no part in grouping or guides
-    for (const it of riders) {
-      it.id = items.length;
-      items.push(it);
-    }
-    const loopList = [...new Set(loops.values())].filter((l) => l.items.length + l.riders.length > 0);
-
-    return { items, tasks, groups, guides, docW, docH, backdrops, portKey, loops: loopList };
   }
 
-  // Endless animations settle.js described on their elements (data-swarm-anim): one cycle
-  // of transform/opacity samples. The rebuild replays the movement relative to how the
-  // element looks right now, so the copy keeps scrolling/floating like the original.
-  const transformed = (cs) =>
-    (cs.transform && cs.transform !== "none") || (cs.rotate && cs.rotate !== "none") || (cs.scale && cs.scale !== "none") || (cs.translate && cs.translate !== "none");
-
-  function fullTransform(cs) {
-    let s = "";
-    if (cs.translate && cs.translate !== "none") s += `translate(${cs.translate.split(" ").slice(0, 2).join(",")}) `;
-    if (cs.rotate && cs.rotate !== "none" && /^-?[\d.]+deg$/.test(cs.rotate)) s += `rotate(${cs.rotate}) `;
-    if (cs.scale && cs.scale !== "none") s += `scale(${cs.scale.split(" ").slice(0, 2).join(",")}) `;
-    if (cs.transform && cs.transform !== "none") s += cs.transform;
-    return s.trim() || "none";
-  }
-
-  // Each frame becomes a change relative to how the element looks right now: a turn and
-  // uniform scale about its transform-origin, then a shift. Applied to every layer the
-  // element was split into, that moves them together like the original.
-  function readLoops() {
-    const out = new Map();
-    const now = performance.now();
-    const mat = (s) => new DOMMatrix(!s || s === "none" ? undefined : s);
-    for (const el of document.querySelectorAll("[data-swarm-anim]")) {
-      try {
-        const d = JSON.parse(el.getAttribute("data-swarm-anim"));
-        const cs = getComputedStyle(el);
-        const m0 = mat(fullTransform(cs));
-        const inv = m0.inverse();
-        const o0 = Math.max(0.001, parseFloat(cs.opacity) || 0);
-        let moves = false;
-        let fades = false;
-        let turns = false;
-        let last = null;
-        const frames = d.frames.map((f) => {
-          const m = mat(f.m);
-          // linear change dL = L * L0^-1; shift dt = t - dL * t0
-          const a = m.a * inv.a + m.c * inv.b;
-          const b = m.b * inv.a + m.d * inv.b;
-          const c = m.a * inv.c + m.c * inv.d;
-          const dd = m.b * inv.c + m.d * inv.d;
-          const sim = Math.abs(a - dd) < 1e-3 && Math.abs(b + c) < 1e-3 && a * dd - b * c > 0;
-          let rot = 0;
-          let sc = 1;
-          let dx;
-          let dy;
-          if (sim && d.origin) {
-            sc = Math.hypot(a, b);
-            rot = (Math.atan2(b, a) * 180) / Math.PI;
-            if (last != null) while (rot - last > 180) rot -= 360;
-            if (last != null) while (rot - last < -180) rot += 360;
-            last = rot;
-            dx = m.e - (a * m0.e + c * m0.f);
-            dy = m.f - (b * m0.e + dd * m0.f);
-          } else {
-            dx = m.e - m0.e;
-            dy = m.f - m0.f;
-          }
-          const op = clamp(f.o / o0, 0, 1 / o0);
-          if (Math.abs(dx) > 0.5 || Math.abs(dy) > 0.5) moves = true;
-          if (Math.abs(rot) > 0.2 || Math.abs(sc - 1) > 0.005) turns = true;
-          if (Math.abs(op - 1) > 0.02) fades = true;
-          return { f: f.f, dx, dy, rot, sc, op };
-        });
-        if (!moves && !fades && !turns) continue;
-        const cycle = d.cycle;
-        const phase = (((d.phase + (now - d.at)) % cycle) + cycle) % cycle;
-        // turning point in viewport px now (the page may have scrolled since settle.js ran)
-        const origin = d.origin ? { x: d.origin.x - (scrollX - d.origin.sx), y: d.origin.y - (scrollY - d.origin.sy) } : null;
-        out.set(el, { frames, cycle, phase, fades, turns: turns && !!origin, origin, items: [], riders: [], started: false });
-      } catch (_) {}
-    }
-    return out;
-  }
-
-  // -------------------------------------------------------------- text reveal
-
-  function wsOf(n, root) {
-    for (let e = n; e && e !== root.parentNode; e = e.parentNode) {
-      const w = e.style && e.style.whiteSpace;
-      if (w) return w;
-    }
-    return "normal";
-  }
-
-  function prepText(it) {
-    const live = it.full.cloneNode(true);
-    const units = [];
-    let seq = "";
-    const boxes = [];
-    (function rec(n, box) {
-      for (const c of [...n.childNodes]) {
-        if (c.nodeType === 3) {
-          let s = c.data;
-          const ws = wsOf(n, live);
-          if (!/^pre|break-spaces/.test(ws)) s = s.replace(/[\t\n\r ]+/g, " ");
-          if (!s.length) {
-            c.remove();
-            continue;
-          }
-          units.push({ t: c, s, len: s.length, box });
-          seq += s;
-        } else if (c.nodeType === 1) {
-          // media, and empty styled boxes (mask icons, dots, swatches) appear in one keystroke
-          if (ATOMIC.has(c.localName) || c instanceof SVGElement || (!/\S/.test(c.textContent) && c.style && boxyStyle(c.style))) {
-            units.push({ e: c, len: 1, box, on: true });
-            seq += "□";
-          } else {
-            const b = c.style && boxyStyle(c.style) ? c : box;
-            if (b === c) boxes.push(c);
-            rec(c, b);
-          }
-        }
-      }
-    })(live, null);
-    for (const u of units) {
-      if (u.t) u.t.data = "";
-      else {
-        u.e.style.visibility = "hidden";
-        u.on = false;
-      }
-    }
-    for (const b of boxes) {
-      b.style.visibility = "hidden";
-      b.__on = false;
-    }
-    it.live = live;
-    it.units = units;
-    it.seq = seq;
-    it.total = seq.length;
-    it.shown = 0;
-    it.rshown = 0;
-  }
-
-  function reveal(it, n) {
-    let left = n;
-    let last = null;
-    for (const u of it.units) {
-      const k = left <= 0 ? 0 : left >= u.len ? u.len : left;
-      left -= k;
-      if (u.t) {
-        const want = k === u.len ? u.s : u.s.slice(0, k);
-        if (u.t.data !== want) u.t.data = want;
-        if (k) last = u.t;
-      } else {
-        const on = k > 0;
-        if (u.on !== on) {
-          u.e.style.visibility = on ? "" : "hidden";
-          u.on = on;
-        }
-        if (on) last = u.e;
-      }
-      if (k && u.box && u.box.__on === false) {
-        for (let b = u.box; b && b !== it.live; b = b.parentNode)
-          if (b.__on === false) {
-            b.style.visibility = "";
-            b.__on = true;
-          }
-      }
-    }
-    return last;
-  }
-
-  // ------------------------------------------------------------------ styles
+  // ---------------------------------------------------------------------- styles
 
   const STYLE = `
 :host{all:initial}
 *{box-sizing:border-box}
-.bg{position:absolute;inset:0;opacity:0;transition:opacity .5s ease}
-.bg.on{opacity:1}
-.layer,.port{position:absolute;overflow:hidden;pointer-events:none}
-.layer{inset:0}
-.world{position:absolute;left:0;top:0;will-change:transform}
-.it{position:absolute;left:0;top:0;transform-origin:0 0}
-.it.settle{transition:transform .3s cubic-bezier(.2,.8,.2,1)}
-.r{background-color:var(--ph,#D9D9D9);transition:background-color .22s ease,border-radius .22s ease}
-.r.st{background-color:transparent}
-.r>.f{position:absolute;inset:0;opacity:0;transition:opacity .22s ease,background-color .35s ease,border-radius .35s ease,box-shadow .35s ease,border-color .35s ease}
-.r.st>.f{opacity:1}
-.m{background-color:var(--ph,#D9D9D9);overflow:hidden}
-.m>.ph{position:absolute;left:50%;top:50%;width:22px;height:22px;transform:translate(-50%,-50%);opacity:.7;transition:opacity .2s}
-.m>.md{position:absolute;inset:0;width:100%;height:100%;opacity:0;clip-path:inset(0 0 100% 0);transition:opacity .35s ease,clip-path .6s cubic-bezier(.2,.75,.2,1)}
-.m.st{background-color:transparent;transition:background-color .3s ease .3s}
-.m.st>.ph{opacity:0}
-.m.st>.md{opacity:1;clip-path:inset(0 0 0 0)}
-.m>.md.swap{animation:swap .45s ease}
-@keyframes swap{from{opacity:0;filter:blur(6px)}}
-.m>.fr{position:absolute;inset:0;pointer-events:none}
-.l svg{position:absolute;left:0;top:0;overflow:visible}
-.bd{position:absolute;opacity:0;-webkit-backdrop-filter:saturate(180%) blur(14px);backdrop-filter:saturate(180%) blur(14px);box-shadow:0 1px 0 rgba(0,0,0,.06);pointer-events:none}
-.caret{display:inline-block;width:1.5px;height:1.1em;margin-left:1px;margin-right:-2.5px;vertical-align:text-bottom;background:currentColor;animation:blink 1s steps(1) infinite}
-@keyframes blink{50%{opacity:0}}
-.sa{background-color:rgba(13,153,255,.28)!important}
-.ov{position:absolute;left:0;top:0;width:100%;height:100%;overflow:visible;pointer-events:none}
-.badges,.cursors{position:absolute;inset:0;pointer-events:none;overflow:hidden}
-.badge{position:absolute;transform:translate(-50%);padding:1px 4px;border-radius:2px;color:#fff;font:600 11px/16px Inter,system-ui,-apple-system,"Segoe UI",sans-serif;white-space:nowrap;font-variant-numeric:tabular-nums}
-.cursor{position:absolute;left:0;top:0;will-change:transform}
-.cursor svg{position:absolute;overflow:visible;filter:drop-shadow(0 2px 2.5px rgba(15,23,42,.32))}
-.rulers{position:absolute;inset:0;pointer-events:none}
-.ruler{position:absolute;background:#2c2c2c;pointer-events:none}
-.ruler svg{display:block}
-.ruler-top{top:0;left:0;right:0;height:20px;border-bottom:1px solid #3a3a3a}
-.ruler-left{top:0;left:0;bottom:0;width:20px;border-right:1px solid #3a3a3a}
-.ruler-corner{position:absolute;top:0;left:0;width:20px;height:20px;background:#2c2c2c}
-.rtext{font:500 9px Inter,system-ui,-apple-system,sans-serif;fill:#8c8c8c}
-.rsel{fill:#0d99ff}
-.intro{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%) scale(.92);opacity:0;transition:opacity .35s ease,transform .45s cubic-bezier(.2,.8,.2,1);pointer-events:none}
-.intro.on{opacity:1;transform:translate(-50%,-50%)}
-.intro.gone{opacity:0;transform:translate(-50%,-50%) scale(.9)}
-.intro img{display:block;width:60px;height:60px;object-fit:contain;filter:grayscale(1);opacity:.42;border-radius:14px}
-.intro .mono{width:60px;height:60px;border-radius:16px;background:#D7DADE;color:#fff;font:700 30px/60px Inter,system-ui,sans-serif;text-align:center}
-.hud{position:absolute;left:50%;bottom:22px;transform:translate(-50%,18px);opacity:0;display:flex;align-items:center;gap:8px;padding:7px 7px 9px 9px;background:linear-gradient(180deg,rgba(26,28,40,.95),rgba(14,15,22,.95));-webkit-backdrop-filter:blur(16px) saturate(150%);backdrop-filter:blur(16px) saturate(150%);color:#F4F5F8;border-radius:16px;box-shadow:0 18px 44px rgba(0,0,0,.34),inset 0 0 0 1px rgba(255,255,255,.08);font:500 12px/1 Inter,system-ui,-apple-system,"Segoe UI",sans-serif;pointer-events:auto;transition:opacity .45s ease,transform .45s cubic-bezier(.2,.8,.2,1);white-space:nowrap;user-select:none;z-index:5;overflow:hidden}
-.hud .mark{width:26px;height:26px;flex:none;display:block}
+canvas{position:fixed;left:0;top:0;width:100vw;height:100vh;pointer-events:auto;cursor:default}
+canvas.off{pointer-events:none}
+.hud{position:fixed;left:50%;bottom:22px;display:flex;align-items:center;gap:8px;padding:7px 7px 9px 9px;border-radius:16px;background:linear-gradient(180deg,rgba(26,28,40,.95),rgba(14,15,22,.95));-webkit-backdrop-filter:blur(16px) saturate(150%);backdrop-filter:blur(16px) saturate(150%);box-shadow:0 18px 44px rgba(0,0,0,.34),inset 0 0 0 1px rgba(255,255,255,.08);color:#F4F5F8;font:500 12px/1 ${SANS};pointer-events:auto;opacity:0;transform:translate(-50%,14px);transition:opacity .45s ease,transform .45s cubic-bezier(.2,.8,.2,1);user-select:none;white-space:nowrap;overflow:hidden}
 .hud.on{opacity:1;transform:translate(-50%,0)}
-.hud{cursor:grab;touch-action:none}
-.hud.dragging{cursor:grabbing;transition:opacity .45s ease}
-.hud.placed{bottom:auto;transform:translate(0,18px)}
-.hud.placed.on{transform:none}
-.hud.on.gone{opacity:0;pointer-events:none;transform:translate(-50%,18px)}
-.hud.placed.on.gone{transform:translate(0,18px)}
-.hud button.ico{display:inline-flex;align-items:center;justify-content:center;padding:6px 8px}
-.hud button.ico svg{width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
-.toast{position:absolute;left:50%;bottom:26px;transform:translate(-50%,10px);padding:9px 14px;border-radius:12px;background:rgba(16,17,24,.94);color:#fff;font:500 12px/1.2 Inter,system-ui,-apple-system,"Segoe UI",sans-serif;box-shadow:0 10px 30px rgba(0,0,0,.28);opacity:0;pointer-events:none;transition:opacity .35s ease,transform .35s ease;white-space:nowrap;z-index:6}
-.toast.on{opacity:1;transform:translate(-50%,0)}
-.toast kbd{font:600 11px/1 Inter,system-ui,sans-serif;padding:3px 6px;border-radius:6px;background:rgba(255,255,255,.14);margin:0 2px}
-.hud .dots{display:flex;padding-left:7px}
-.hud .dots i{display:block;width:20px;height:20px;margin-left:-7px;border-radius:7px;border:2px solid #151720;font:700 9.5px/16px Inter,system-ui,sans-serif;font-style:normal;text-align:center;color:#fff;transition:background .3s}
-.hud .txt,.hud .status{display:flex;align-items:center;gap:7px;color:#A9AFBF;font-variant-numeric:tabular-nums}
-.hud .txt b{color:#fff;font-weight:650}
-.hud .sep{width:4px;height:4px;border-radius:50%;background:#4A5064}
-.hud .bar{position:absolute;left:0;right:0;bottom:0;width:auto;height:3px;background:rgba(255,255,255,.06);overflow:hidden}
+.hud .mark{width:26px;height:26px;flex:none;display:block}
+.hud .bar{position:absolute;left:0;right:0;bottom:0;height:3px;background:rgba(255,255,255,.06);overflow:hidden}
 .hud .bar i{display:block;height:100%;width:0;background:linear-gradient(90deg,#FF5A6E,#A46BFF 55%,#3D9BFF);transition:width .35s ease}
-.hud button{all:unset;cursor:pointer;padding:8px 11px;border-radius:10px;background:rgba(255,255,255,.07);color:#F4F5F8;font:600 12px/1 Inter,system-ui,-apple-system,sans-serif;transition:background .15s,color .15s}
-.hud button:hover{background:rgba(255,255,255,.14)}
-.hud button:focus-visible{outline:2px solid #3D9BFF;outline-offset:1px}
-.hud button.pri{background:linear-gradient(90deg,#FF5A6E,#A46BFF 55%,#3D9BFF)}
-.hud button.pri:hover{filter:brightness(1.1)}
-.hud button.on{background:#2F6BFF;color:#fff}
-.hud button.on:hover{background:#4A7FFF}
-.hud button[hidden]{display:none}
-.hud .x{padding:8px 10px;color:#9CA3B4;background:transparent}
 .hud button.snd{display:flex;align-items:center;gap:6px;padding:7px 9px}
 .hud button.snd.off{color:#7D8496}
 .hud button.snd.tap{background:#2F6BFF;animation:hudpulse 1.6s ease-in-out infinite}
 @keyframes hudpulse{50%{box-shadow:0 0 0 4px rgba(47,107,255,.3)}}
+.meta{display:flex;flex-direction:column;gap:4px;padding:0 10px 0 4px;min-width:178px}
+.meta .t{font-weight:650;color:#fff}
+.meta .s{color:#9CA3B4;font:500 11px/1 ${SANS};font-variant-numeric:tabular-nums}
+.hud button{all:unset;cursor:pointer;padding:8px 11px;border-radius:10px;color:#F4F5F8;background:rgba(255,255,255,.07);font:550 12px/1 ${SANS};transition:background .15s,color .15s}
+.hud button:hover{background:rgba(255,255,255,.14)}
+.hud button:focus-visible{outline:2px solid #2F6BFF;outline-offset:1px}
+.hud button.on{background:#2F6BFF;color:#fff}
+.hud button.on:hover{background:#4A7FFF}
+.hud button.pri{background:linear-gradient(90deg,#FF5A6E,#A46BFF 55%,#3D9BFF);color:#fff;font-weight:650}
+.hud button[hidden]{display:none}
+.hud .x{padding:8px 10px;color:#9CA3B4;background:transparent}
+.hud{cursor:grab;touch-action:none}
+.hud.dragging{cursor:grabbing;transition:opacity .45s ease}
+.hud.placed{bottom:auto;transform:translate(0,14px)}
+.hud.placed.on{transform:none}
+.hud.on.gone{opacity:0;pointer-events:none;transform:translate(-50%,14px)}
+.hud.placed.on.gone{transform:translate(0,14px)}
+.hud .ico{display:inline-flex;align-items:center;justify-content:center;padding:6px 8px}
+.hud .ico svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.toast{position:fixed;left:50%;bottom:26px;transform:translate(-50%,10px);padding:9px 14px;border-radius:12px;background:rgba(16,17,22,.86);color:#F4F5F8;font:500 12px/1.2 ${SANS};box-shadow:0 14px 36px rgba(0,0,0,.28);opacity:0;pointer-events:none;transition:opacity .35s ease,transform .35s ease;white-space:nowrap}
+.toast.on{opacity:1;transform:translate(-50%,0)}
+.toast kbd{font:650 11px/1 ${SANS};padding:3px 6px;border-radius:6px;background:rgba(255,255,255,.14);margin:0 2px}
 `;
-
-  // -------------------------------------------------------------------- env
-
-  function detectEnv() {
-    const se = document.scrollingElement || document.documentElement;
-    let scroller = se;
-    let isRoot = true;
-    if (se.scrollHeight <= innerHeight + 4) {
-      let best = null;
-      let bestArea = 0;
-      const all = document.body ? document.body.getElementsByTagName("*") : [];
-      for (let i = 0; i < all.length && i < 20000; i++) {
-        const el = all[i];
-        if (el.scrollHeight <= el.clientHeight + 40 || el.clientHeight < innerHeight * 0.4) continue;
-        const oy = getComputedStyle(el).overflowY;
-        if (!/(auto|scroll|overlay)/.test(oy)) continue;
-        const r = el.getBoundingClientRect();
-        const area = r.width * r.height;
-        if (area > bestArea && r.width > innerWidth * 0.35) {
-          best = el;
-          bestArea = area;
-        }
-      }
-      if (best) {
-        scroller = best;
-        isRoot = false;
-      }
-    }
-    const env = {
-      scroller,
-      isRoot,
-      host: null,
-      pageBg: pageBackground(),
-      geom() {
-        if (isRoot) {
-          return {
-            ox: 0,
-            oy: 0,
-            sx: window.scrollX,
-            sy: window.scrollY,
-            vw: document.documentElement.clientWidth,
-            vh: window.innerHeight,
-          };
-        }
-        const r = scroller.getBoundingClientRect();
-        return {
-          ox: r.left + scroller.clientLeft,
-          oy: r.top + scroller.clientTop,
-          sx: scroller.scrollLeft,
-          sy: scroller.scrollTop,
-          vw: scroller.clientWidth,
-          vh: scroller.clientHeight,
-        };
-      },
-      scrollHeight: () => (isRoot ? Math.max(se.scrollHeight, document.body ? document.body.scrollHeight : 0) : scroller.scrollHeight),
-      scrollWidth: () => (isRoot ? se.scrollWidth : scroller.scrollWidth),
-      scrollTo(y, x) {
-        const opts = { top: y, behavior: "instant" };
-        if (x != null) opts.left = x;
-        if (isRoot) window.scrollTo(opts);
-        else scroller.scrollTo(opts);
-      },
-      scrollBy(dy) {
-        if (isRoot) window.scrollBy({ top: dy, behavior: "instant" });
-        else scroller.scrollBy({ top: dy, behavior: "instant" });
-      },
-    };
-    return env;
-  }
-
-  // ------------------------------------------------------------------- view
-
-  class View {
-    constructor(env) {
-      this.env = env;
-      this.frozen = null;
-      for (const old of document.querySelectorAll("swarmline-layer")) old.remove();
-      const host = document.createElement("swarmline-layer");
-      host.style.cssText =
-        "all:initial !important;position:fixed !important;inset:0 !important;z-index:2147483647 !important;display:block !important;pointer-events:auto !important;contain:strict !important;opacity:1;transition:opacity .6s ease;";
-      env.host = host;
-      this.host = host;
-      // closed: page scripts can't reach into the rebuild (it can hold screenshot crops of
-      // cross-origin frames the page itself isn't allowed to read)
-      const root = host.attachShadow({ mode: "closed" });
-      this.root = root;
-      root.innerHTML = `<style>${STYLE}</style>
-<div class="bg"></div>
-<div class="layer under"></div>
-<div class="port"><div class="world"></div></div>
-<div class="layer over"></div>
-<div class="intro"></div>
-<svg class="ov"></svg>
-<div class="badges"></div>
-<div class="cursors"></div>
-<div class="rulers"></div>
-<div class="hud" role="toolbar" aria-label="Swarmline">
-  <svg class="mark" viewBox="0 0 128 128" aria-hidden="true"><defs><linearGradient id="swl-g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#FF5470"/><stop offset=".52" stop-color="#9B4DFF"/><stop offset="1" stop-color="#2E6BFF"/></linearGradient></defs><rect width="128" height="128" rx="30" fill="url(#swl-g)"/><path d="M86 56 V44 a12 12 0 0 0 -12 -12 H32 a12 12 0 0 0 -12 12 V84 a12 12 0 0 0 12 12 H62" fill="none" stroke="#fff" stroke-width="10" stroke-linecap="round"/><path d="M35 62 H64" stroke="#fff" stroke-width="9" stroke-linecap="round"/><path d="M82 60 L82 93.6 L90.5 86 L96.1 98.5 L102.6 95.6 L97 83.3 L108.2 83.1 Z" fill="#fff" stroke="#24104F" stroke-width="3" stroke-linejoin="round"/></svg>
-  <div class="dots" aria-hidden="true"></div>
-  <div class="txt"><span class="status">Scanning page…</span></div>
-  <div class="bar" role="progressbar" aria-label="Pieces built" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><i></i></div>
-  <button data-a="tour" class="on" title="Auto-scroll while the swarm builds (T)" aria-pressed="true">Touring</button>
-  <button data-a="speed" title="Build speed" aria-label="Build speed 1×">1×</button>
-  <button data-a="sound" class="snd" title="Sound (M)" aria-label="Sound (M)"></button>
-  <button data-a="live" class="pri" hidden title="Fade back to the real page">Go live</button>
-  <button data-a="replay" hidden title="Wipe and rebuild again">Replay</button>
-  <button data-a="hide" class="ico" title="Hide the controls for a clean recording (H) · drag the bar to move it" aria-label="Hide controls"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3l18 18"/><path d="M10.6 5.1A10.5 10.5 0 0 1 12 5c6 0 9.5 7 9.5 7a17 17 0 0 1-3.2 4.1M6.6 6.6C3.9 8.4 2.5 12 2.5 12s3.5 7 9.5 7a9.6 9.6 0 0 0 5.4-1.6"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg></button>
-  <button data-a="close" class="x" title="Exit (Esc)" aria-label="Exit (Esc)">✕</button>
-</div>
-<div class="toast" role="status"></div>`;
-      const $ = (s) => root.querySelector(s);
-      this.bg = $(".bg");
-      this.under = $(".under");
-      this.over = $(".over");
-      this.port = $(".port");
-      this.world = $(".world");
-      this.intro = $(".intro");
-      this.ov = $(".ov");
-      this.badges = $(".badges");
-      this.cursorsEl = $(".cursors");
-      this.rulers = $(".rulers");
-      this.hud = $(".hud");
-      this.status = $(".status");
-      this.barFill = $(".bar i");
-      this.dots = $(".dots");
-      this.cursorEls = new Map();
-      this.liveCanvases = [];
-      this.loops = [];
-      this._ovS = "";
-      this._rulersS = "";
-      this._ovB = "";
-      this._rulersOn = false;
-
-      const pb = env.pageBg;
-      this.bg.style.backgroundColor = pb.color;
-      const rgb = (pb.color.match(/[\d.]+/g) || [255, 255, 255]).map(Number);
-      const lum = (0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2]) / 255;
-      if (lum < 0.4) this.host.style.setProperty("--ph", "#3B3D42");
-      if (pb.image && pb.image !== "none") {
-        this.bg.style.backgroundImage = pb.image;
-        this.bg.style.backgroundSize = pb.size;
-        this.bg.style.backgroundPosition = pb.position;
-        this.bg.style.backgroundRepeat = pb.repeat;
-      }
-      this.makeIntroLogo();
-      document.documentElement.appendChild(host);
-      this.measure();
-    }
-
-    makeIntroLogo() {
-      const links = [...document.querySelectorAll('link[rel~="icon"], link[rel="apple-touch-icon"], link[rel="shortcut icon"]')];
-      const sized = links
-        .map((l) => ({ href: l.href, s: parseInt((l.getAttribute("sizes") || "0").split("x")[0], 10) || (l.rel.includes("apple") ? 180 : 32) }))
-        .filter((l) => l.href)
-        .sort((a, b) => b.s - a.s);
-      const label = (document.title || location.hostname || "?").replace(/^www\./, "").trim();
-      const mono = () => {
-        this.intro.innerHTML = "";
-        const d = document.createElement("div");
-        d.className = "mono";
-        d.textContent = (label[0] || "?").toUpperCase();
-        this.intro.appendChild(d);
-      };
-      const href = sized.length ? sized[0].href : location.origin + "/favicon.ico";
-      const img = document.createElement("img");
-      img.onerror = mono;
-      img.src = href;
-      this.intro.appendChild(img);
-    }
-
-    measure() {
-      this.W = innerWidth;
-      this.H = innerHeight;
-      this.g = this.env.geom();
-      const g = this.g;
-      this.port.style.left = g.ox + "px";
-      this.port.style.top = g.oy + "px";
-      this.port.style.width = g.vw + "px";
-      this.port.style.height = g.vh + "px";
-    }
-
-    get vp() {
-      if (this.frozen) return this.frozen;
-      const g = this.env.geom();
-      return { ...g, ox: this.g.ox, oy: this.g.oy };
-    }
-
-    syncWorld() {
-      const vp = this.vp;
-      this.world.style.transform = `translate(${-vp.sx}px,${-vp.sy}px)`;
-    }
-
-    mount(model) {
-      this.loops = model.loops || [];
-      this.world.style.width = model.docW + "px";
-      this.world.style.height = model.docH + "px";
-      const by = { world: [], under: [], over: [] };
-      for (const it of model.items) by[it.layer].push(it);
-      if (model.portKey != null) {
-        // inner scroller: its scrolling content sits at the scroller's own place in
-        // the stacking order (above its dialog/panel background, below later UI)
-        const screen = [...by.under, ...by.over].sort((a, b) => a.key - b.key);
-        const frag = document.createDocumentFragment();
-        let placed = false;
-        for (const it of screen) {
-          if (!placed && it.key > model.portKey) {
-            frag.appendChild(this.port);
-            placed = true;
-          }
-          frag.appendChild(this.makeNode(it));
-        }
-        if (!placed) frag.appendChild(this.port);
-        this.over.appendChild(frag);
-        const wl = by.world.sort((a, b) => a.key - b.key);
-        const wf = document.createDocumentFragment();
-        for (const it of wl) wf.appendChild(this.makeNode(it));
-        this.world.appendChild(wf);
-      } else
-        for (const layer of ["under", "world", "over"]) {
-          const list = by[layer].sort((a, b) => a.key - b.key);
-          const frag = document.createDocumentFragment();
-          for (const it of list) frag.appendChild(this.makeNode(it));
-          (layer === "world" ? this.world : this[layer]).appendChild(frag);
-        }
-      this.backdrops = (model.backdrops || []).map((b) => {
-        const d = document.createElement("div");
-        d.className = "bd";
-        const rgb = (b.color.match(/[\d.]+/g) || [255, 255, 255]).slice(0, 3).join(",");
-        d.setAttribute("style", `left:${b.x}px;top:${b.y}px;width:${b.w}px;height:${b.h}px;background:rgba(${rgb},.82);`);
-        this.over.insertBefore(d, this.over.firstChild);
-        return d;
-      });
-      this.bdStart = this.env.geom().sy;
-    }
-
-    makeNode(it) {
-      const n = document.createElement("div");
-      n.style.display = "none";
-      it.node = n;
-      if (it.kind === "rect") {
-        n.className = "it r";
-        const f = document.createElement("div");
-        f.className = "f";
-        n.appendChild(f);
-      } else if (it.kind === "image") {
-        n.className = "it m";
-        n.innerHTML = IMG_ICON;
-      } else if (it.kind === "text") {
-        n.className = "it t";
-        prepText(it);
-      } else if (it.kind === "line") {
-        n.className = "it l";
-        n.innerHTML = '<svg width="1" height="1"><path fill="none"/></svg>';
-      }
-      if (it.op < 0.999) n.style.opacity = it.op;
-      if (it.blend) n.style.mixBlendMode = it.blend;
-      return n;
-    }
-
-    renderItem(it) {
-      const tw = it.twinOf;
-      if (tw && it._tv !== tw.v) {
-        it._tv = tw.v;
-        it.vis = tw.vis;
-        it.shown = tw.total ? Math.round((tw.shown / tw.total) * it.total) : it.total;
-        it.dx = tw.dx;
-        it.dy = tw.dy;
-        it.scale = tw.scale;
-        it.done = tw.done;
-        it.v++;
-      }
-      if (it.rv === it.v) return;
-      it.rv = it.v;
-      const n = it.node;
-      if (!it.vis) {
-        if (n.style.display !== "none") n.style.display = "none";
-        return;
-      }
-      if (n.style.display === "none") n.style.display = "";
-      if (it.settle) {
-        it.settle = false;
-        n.classList.add("settle");
-        clearTimeout(n._st);
-        n._st = setTimeout(() => n.classList.remove("settle"), 340);
-      }
-      if (it.kind === "line") {
-        n.style.transform = `translate(${it.dx}px,${it.dy}px)`;
-        const pts = it.pts.slice(0, it.placed);
-        const d = pts.map((p, i) => `${i ? "L" : "M"}${p.x} ${p.y}`).join(" ") + (it.shut ? " Z" : "");
-        const path = n.firstChild.firstChild;
-        path.setAttribute("d", d);
-        path.setAttribute("stroke", it.stroke);
-        path.setAttribute("stroke-width", it.sw);
-        path.setAttribute("stroke-linecap", "square");
-        if (it.dash) path.setAttribute("stroke-dasharray", it.dash);
-        return;
-      }
-      const w = it.draw ? it.draw.w : it.w;
-      const h = it.draw ? it.draw.h : it.h;
-      let tf = `translate(${it.x + it.dx}px,${it.y + it.dy}px)`;
-      if (it.scale !== 1) tf += ` scale(${it.scale})`;
-      n.style.transform = tf;
-      n.style.width = w + "px";
-      n.style.height = h + "px";
-      const c = it.clip;
-      n.style.clipPath = !it.done
-        ? ""
-        : c
-          ? `inset(${Math.max(0, c.t - it.y)}px ${Math.max(0, it.x + it.w - c.r)}px ${Math.max(0, it.y + it.h - c.b)}px ${Math.max(0, c.l - it.x)}px${it.clipRound ? " round " + it.clipRound : ""})`
-          : it.clipRound
-            ? `inset(0px round ${it.clipRound})`
-            : "";
-
-      if (it.kind === "rect") {
-        const css = it.mode === "master" ? it.copyOf.css : it.css;
-        if (n._css !== css) {
-          n.firstChild.setAttribute("style", css);
-          n._css = css;
-        }
-        n.classList.toggle("st", !!it.styled);
-        n.style.borderRadius = it.styled ? (it.mode === "master" ? it.copyOf.radius : it.radius) : "0px";
-      } else if (it.kind === "image") {
-        const src = it.mode === "master" ? it.copyOf : it;
-        if (n._src !== src) {
-          const old = n.querySelector(".md");
-          const m = src.media.cloneNode(true);
-          m.classList.add("md");
-          if (src.liveSrc) {
-            this.liveCanvases = this.liveCanvases.filter((l) => l.it !== it);
-            this.liveCanvases.push({ it, src: src.liveSrc, dst: m, g: null });
-          }
-          if (old) {
-            m.classList.add("swap");
-            old.replaceWith(m);
-          } else n.appendChild(m);
-          if (m.localName === "video") {
-            m.muted = true;
-            const t = parseFloat(m.getAttribute("data-t"));
-            if (t > 0) m.addEventListener("loadedmetadata", () => (m.currentTime = t), { once: true });
-            if (m.hasAttribute("data-play")) m.play().catch(() => {});
-          }
-          n._src = src;
-          if (src.frame) {
-            let fr = n.querySelector(".fr");
-            if (!fr) {
-              fr = document.createElement("div");
-              fr.className = "fr";
-              n.appendChild(fr);
-            }
-            fr.setAttribute("style", src.frame + `border-radius:${src.radius};`);
-          }
-        }
-        n.classList.toggle("st", !!it.styled);
-        n.style.borderRadius = it.styled ? src.radius : "0px";
-        n.style.boxShadow = it.styled ? src.shadow : "";
-        n.style.backgroundColor = it.styled && src.bg ? src.bg : "";
-      } else if (it.kind === "text") {
-        let content;
-        if (it.mode === "master") {
-          if (!it._mv) it._mv = it.copyOf.full.cloneNode(true);
-          content = it._mv;
-        } else content = it.live;
-        if (n.firstChild !== content) {
-          n.textContent = "";
-          n.appendChild(content);
-        }
-        if (it.mode !== "master" && it.rshown !== it.shown) {
-          it._last = reveal(it, it.shown);
-          it.rshown = it.shown;
-        }
-        content.classList.toggle("sa", !!it.selAll);
-        const wantCaret = it.editing && !it.selAll && it.mode !== "master";
-        if (wantCaret) {
-          if (!it._caret) {
-            it._caret = document.createElement("span");
-            it._caret.className = "caret";
-          }
-          const last = it._last;
-          if (last && last.parentNode) last.parentNode.insertBefore(it._caret, last.nextSibling);
-          else content.insertBefore(it._caret, content.firstChild);
-        } else if (it._caret && it._caret.parentNode) it._caret.remove();
-        if (it.scale !== 1) {
-          const ox = it.tb.x - it.x + (it.align === "center" ? it.tb.w / 2 : it.align === "right" || it.align === "end" ? it.tb.w : 0);
-          n.style.transformOrigin = `${ox}px ${it.tb.y - it.y}px`;
-        }
-      }
-    }
-
-    renderCursors(E) {
-      const vp = E.vp;
-      const seen = new Set();
-      for (const c of E.cursors) {
-        let el = this.cursorEls.get(c.id);
-        if (!el) {
-          el = document.createElement("div");
-          el.className = "cursor";
-          el.innerHTML = '<svg width="28" height="28" viewBox="0 0 28 28"></svg>';
-          this.cursorsEl.appendChild(el);
-          this.cursorEls.set(c.id, el);
-          el._shape = "";
-        }
-        seen.add(c.id);
-        const X = c.sticky ? c.x : c.x - vp.sx + vp.ox;
-        const Y = c.sticky ? c.y : c.y - vp.sy + vp.oy;
-        el.style.transform = `translate(${f1(X)}px,${f1(Y)}px)`;
-        const svg = el.firstChild;
-        if (el._shape !== c.shape) {
-          svg.innerHTML = cursorSVG(c.shape, c.color);
-          el._shape = c.shape;
-          const [hx, hy] = HOT[c.shape];
-          el._hx = hx;
-          el._hy = hy;
-          svg.style.transformOrigin = `${hx}px ${hy}px`;
-        }
-        const s = 1 - c.press * 0.12;
-        svg.style.transform = `translate(${-el._hx}px,${-el._hy}px) rotate(${f1(c.angle)}deg) scale(${s})`;
-      }
-      for (const [id, el] of this.cursorEls)
-        if (!seen.has(id)) {
-          el.remove();
-          this.cursorEls.delete(id);
-        }
-    }
-
-    renderOverlay(E) {
-      const vp = E.vp;
-      const W = this.W;
-      const H = this.H;
-      const X = (x, st) => f1(st ? x : x - vp.sx + vp.ox);
-      const Y = (y, st) => f1(st ? y : y - vp.sy + vp.oy);
-      let s = "";
-      let b = "";
-      for (const g of E.guides) {
-        if (!g.vis || g.op <= 0) continue;
-        const sw = 1 + g.flash;
-        const flt = g.flash > 0 ? ` style="filter:drop-shadow(0 0 ${f1(2 + g.flash * 3)}px ${RED})"` : "";
-        if (g.axis === "x") {
-          const x = X(g.cur);
-          s += `<line x1="${x}" x2="${x}" y1="0" y2="${H}" stroke="${RED}" stroke-width="${sw}" opacity="${f1(g.op)}"${flt}/>`;
-        } else {
-          const y = Y(g.cur);
-          s += `<line x1="0" x2="${W}" y1="${y}" y2="${y}" stroke="${RED}" stroke-width="${sw}" opacity="${f1(g.op)}"${flt}/>`;
-        }
-      }
-      for (const it of E.editLines) {
-        const st = it.layer !== "world";
-        const pts = it.pts.slice(0, it.placed).map((p) => [X(p.x + it.dx, st), Y(p.y + it.dy, st)]);
-        const o = it.owner;
-        const all = o ? [...pts, [X(o.x, o.sticky), Y(o.y, o.sticky)]] : pts;
-        s += `<polyline points="${all.map((p) => p.join(",")).join(" ")}${it.shut && pts[0] ? " " + pts[0].join(",") : ""}" fill="none" stroke="${BLUE}" stroke-width="1.5"/>`;
-        for (const p of pts) s += `<circle cx="${p[0]}" cy="${p[1]}" r="3.6" fill="#fff" stroke="${BLUE}" stroke-width="1.5"/>`;
-      }
-      const rt = E.rulers.t;
-      for (const c of E.cursors) {
-        if (!c.ov) continue;
-        const st = c.sticky;
-        for (const v of c.ov()) {
-          if (v.t === "box") {
-            const x = X(v.b.x, st);
-            const y = Y(v.b.y, st);
-            const w = f1(v.b.w);
-            const h = f1(v.b.h);
-            const col = v.color === "red" ? RED : BLUE;
-            s += `<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="none" stroke="${col}" stroke-width="1"/>`;
-            if (v.underline && v.underline.w > 0) {
-              const u = v.underline;
-              s += `<line x1="${X(u.x, st)}" x2="${X(u.x + u.w, st)}" y1="${Y(u.y, st)}" y2="${Y(u.y, st)}" stroke="${BLUE}" stroke-width="1.5"/>`;
-            }
-            if (v.rulerLines && rt > 0.05)
-              s += `<g stroke="${BLUE}" stroke-width="1" stroke-dasharray="2 2" opacity="${f1(rt)}"><line x1="${RULER}" x2="${x}" y1="${f1(y + h / 2)}" y2="${f1(y + h / 2)}"/><line x1="${f1(x + w / 2)}" x2="${f1(x + w / 2)}" y1="${RULER}" y2="${y}"/></g>`;
-            if (v.handles)
-              for (const [hx, hy] of [[x, y], [x + w, y], [x, y + h], [x + w, y + h]])
-                s += `<rect x="${f1(hx - 3.5)}" y="${f1(hy - 3.5)}" width="7" height="7" fill="#fff" stroke="${col}" stroke-width="1"/>`;
-            if (v.badge && w > 0) b += `<div class="badge" style="left:${f1(x + w / 2)}px;top:${f1(y + h + 8)}px;background:${col}">${v.badge}</div>`;
-          } else if (v.t === "measure") {
-            const a = { x: X(v.a.x, st), y: Y(v.a.y, st) };
-            const z = { x: X(v.b.x, st), y: Y(v.b.y, st) };
-            s += `<line x1="${a.x}" y1="${a.y}" x2="${z.x}" y2="${z.y}" stroke="${RED}" stroke-width="1"/>`;
-            const horiz = a.y === z.y;
-            b += `<div class="badge" style="left:${f1(horiz ? (a.x + z.x) / 2 : a.x + 18)}px;top:${f1(horiz ? a.y + 8 : (a.y + z.y) / 2 - 9)}px;background:${RED}">${v.label}</div>`;
-          }
-        }
-      }
-      if (s !== this._ovS) {
-        this.ov.innerHTML = s;
-        this._ovS = s;
-      }
-      if (b !== this._ovB) {
-        this.badges.innerHTML = b;
-        this._ovB = b;
-      }
-    }
-
-    renderRulers(E) {
-      const t = E.rulers.t;
-      if (t <= 0.001) {
-        if (this._rulersOn) {
-          this.rulers.innerHTML = "";
-          this._rulersOn = false;
-        }
-        return;
-      }
-      this._rulersOn = true;
-      const vp = E.vp;
-      const W = this.W;
-      const H = this.H;
-      const step = 100;
-      let u = "";
-      let a = "";
-      const x0 = Math.floor((vp.sx - vp.ox) / step) * step;
-      for (let c = x0; c - vp.sx + vp.ox < W; c += step / 2) {
-        const x = f1(c - vp.sx + vp.ox);
-        const major = c % step === 0;
-        u += `<line x1="${x}" x2="${x}" y1="${major ? 13 : 16}" y2="${RULER}" stroke="#5E5E5E"/>`;
-        if (major) u += `<text x="${f1(x + 3)}" y="11" class="rtext">${c}</text>`;
-      }
-      const y0 = Math.floor((vp.sy - vp.oy) / step) * step;
-      for (let c = y0; c - vp.sy + vp.oy < H; c += step / 2) {
-        const y = f1(c - vp.sy + vp.oy);
-        const major = c % step === 0;
-        a += `<line y1="${y}" y2="${y}" x1="${major ? 13 : 16}" x2="${RULER}" stroke="#5E5E5E"/>`;
-        if (major) a += `<text x="11" y="${f1(y - 3)}" class="rtext" transform="rotate(-90 11 ${f1(y - 3)})">${c}</text>`;
-      }
-      for (const c of E.cursors) {
-        if (!c.ov || c.sticky) continue;
-        for (const v of c.ov()) {
-          if (v.t !== "box" || !v.handles) continue;
-          const l = f1(v.b.x - vp.sx + vp.ox);
-          const r = f1(v.b.x + v.b.w - vp.sx + vp.ox);
-          const tp = f1(v.b.y - vp.sy + vp.oy);
-          const bt = f1(v.b.y + v.b.h - vp.sy + vp.oy);
-          u = `<rect x="${l}" y="0" width="${f1(r - l)}" height="${RULER}" fill="rgba(13,153,255,0.22)"/>` + u + `<text x="${f1(l + 3)}" y="11" class="rtext rsel">${Math.round(v.b.x)}</text>`;
-          a = `<rect y="${tp}" x="0" height="${f1(bt - tp)}" width="${RULER}" fill="rgba(13,153,255,0.22)"/>` + a;
-        }
-      }
-      for (const g of E.guides) {
-        if (!g.dragging) continue;
-        if (g.axis === "x") {
-          const x = f1(g.cur - vp.sx + vp.ox);
-          u += `<line x1="${x}" x2="${x}" y1="0" y2="${RULER}" stroke="${RED}"/><text x="${f1(x + 4)}" y="11" class="rtext" fill="${RED}" style="fill:${RED}">${Math.round(g.cur)}</text>`;
-        } else {
-          const y = f1(g.cur - vp.sy + vp.oy);
-          a += `<line y1="${y}" y2="${y}" x1="0" x2="${RULER}" stroke="${RED}"/>`;
-        }
-      }
-      const html =
-        `<div class="ruler ruler-top" style="transform:translateY(${f1((t - 1) * 100)}%)"><svg width="${W}" height="${RULER}">${u}</svg></div>` +
-        `<div class="ruler ruler-left" style="transform:translateX(${f1((t - 1) * 100)}%)"><svg width="${RULER}" height="${H}">${a}</svg></div>` +
-        `<div class="ruler-corner" style="opacity:${f1(t)}"></div>`;
-      // only touch the DOM when the rulers actually changed (they sit still most frames)
-      if (html !== this._rulersS) {
-        this.rulers.innerHTML = html;
-        this._rulersS = html;
-      }
-    }
-
-    // Copy live page canvases (WebGL scenes, 2D animations) into their rebuilt layers.
-    // This runs in our animation frame, after the page has drawn its own.
-    renderLive() {
-      for (const L of this.liveCanvases) {
-        const s = L.src;
-        if (!L.it.styled || !L.dst.isConnected || !s.isConnected || !s.width || !s.height) continue;
-        if (L.dst.width !== s.width || L.dst.height !== s.height) {
-          L.dst.width = s.width;
-          L.dst.height = s.height;
-        }
-        try {
-          const g = L.g || (L.g = L.dst.getContext("2d"));
-          g.clearRect(0, 0, s.width, s.height);
-          g.drawImage(s, 0, 0);
-        } catch (_) {}
-      }
-    }
-
-    // A looping animation starts once every visible piece of it is built; the pieces that
-    // were scrolled out of sight (the other half of a marquee) appear with it.
-    startLoops() {
-      for (const L of this.loops) {
-        if (L.started || !L.items.every((it) => it.done)) continue;
-        L.started = true;
-        for (const it of L.riders) {
-          it.vis = true;
-          it.done = true;
-          it.styled = true;
-          it.draw = null;
-          if (it.kind === "text") it.shown = it.total;
-          if (it.kind === "line") it.placed = it.pts.length;
-          bump(it);
-          this.renderItem(it);
-        }
-        const timing = { duration: L.cycle, iterations: Infinity, delay: -L.phase, easing: "linear" };
-        for (const it of [...L.items, ...L.riders]) {
-          const n = it.node;
-          if (!n || !n.animate) continue;
-          // a turn happens about the element's transform-origin, in this layer's coordinates
-          // (the layer node sits at 0,0, so that point works as its own transform-origin)
-          const turns = L.turns && !n._turning;
-          if (turns) {
-            const o = it.layer === "world" ? L.at.world : L.at.screen;
-            n.style.transformOrigin = `${f1(o.x)}px ${f1(o.y)}px`;
-            n._turning = true;
-          }
-          // loops nest (a bobbing icon on a spinning ring): later ones add to earlier ones
-          const composite = n._loop ? "add" : "replace";
-          const kf = L.frames.map((f) => {
-            const k = { offset: f.f, translate: `${f1(f.dx)}px ${f1(f.dy)}px` };
-            if (turns) {
-              k.rotate = `${f1(f.rot)}deg`;
-              k.scale = String(Math.round(f.sc * 1e4) / 1e4);
-              k.clipPath = "none"; // an axis-aligned clip can't follow a turn
-            } else if (it.clip && it.kind !== "line" && composite === "replace") {
-              const c = it.clip;
-              const x = it.x + f.dx;
-              const y = it.y + f.dy;
-              k.clipPath = `inset(${f1(Math.max(0, c.t - y))}px ${f1(Math.max(0, x + it.w - c.r))}px ${f1(Math.max(0, y + it.h - c.b))}px ${f1(Math.max(0, c.l - x))}px)`;
-            }
-            return k;
-          });
-          try {
-            const a = n.animate(kf, { ...timing, composite });
-            n._loop = n._loop || a;
-            if (L.fades) {
-              const base = it.op == null ? 1 : it.op;
-              n.animate(L.frames.map((f) => ({ offset: f.f, opacity: clamp(base * f.op, 0, 1) })), timing);
-            }
-          } catch (_) {}
-        }
-      }
-    }
-
-    render(E) {
-      this.syncWorld();
-      if (this.backdrops && this.backdrops.length) {
-        const o = f1(clamp((Math.abs(E.vp.sy - this.bdStart) - 8) / 80, 0, 1));
-        if (o !== this._bdO) {
-          this._bdO = o;
-          for (const d of this.backdrops) d.style.opacity = o;
-        }
-      }
-      if (E.items) for (const it of E.items) this.renderItem(it);
-      if (this.loops.length && (this._loopT = (this._loopT || 0) + 1) % 6 === 0) this.startLoops();
-      if (this.liveCanvases.length) this.renderLive();
-      this.renderOverlay(E);
-      this.renderCursors(E);
-      this.renderRulers(E);
-    }
-  }
-
-  // ----------------------------------------------------------------- engine
-
-  class Engine {
-    constructor(view) {
-      this.view = view;
-      this.vp = view.vp;
-      this.items = null;
-      this.tasks = [];
-      this.groups = [];
-      this.guides = [];
-      this.editLines = new Set();
-      this.cursors = [];
-      this.started = false;
-      this.ready = false;
-      this.frontier = 0;
-      this.hold = false; // true while the tour camera is moving: unlock nothing mid-scroll
-      this.scrollSpeed = 0;
-      this.pending = []; // tasks not started yet (so per-frame scans skip finished work)
-      this.activeCount = 0;
-      this.vel = 0;
-      this.tempo = 1;
-      this.speed = 1;
-      this.time = 0;
-      this.rulers = { want: 0, t: 0, lastNeed: -10 };
-      this.lastScroll = null;
-      this.nextId = 0;
-      this.spawnCooldown = 0;
-      this.flocking = false;
-      this.lastT = null;
-      this.tv = { x: 0, y: 0 };
-      this.mouse = null;
-      this.retired = 0;
-      this.doneCount = 0;
-      this.waitCount = 0;
-      const vp = this.vp;
-      for (let n = 0; n < INTRO_AGENTS; n++) {
-        const side = n % 2 === 0;
-        const p = this.fromViewport(side ? vp.ox - 40 - rand(0, 200) : vp.ox + vp.vw + 40 + rand(0, 200), vp.oy + rand(0.05, 0.95) * vp.vh);
-        const c = this.makeCursor(p.x, p.y, n < MIN_AGENTS);
-        c.follow = true;
-        this.cursors.push(c);
-      }
-    }
-
-    setModel(m) {
-      this.items = m.items;
-      this.tasks = m.tasks;
-      this.groups = m.groups;
-      this.guides = m.guides;
-      this.guideDeps = new Map(m.guides.map((g) => [g, g.deps || []]));
-      this.waitCount = m.tasks.length;
-      this.pending = m.tasks.slice();
-      this.ready = true;
-    }
-
-    makeCursor(x, y, home = false) {
-      const id = this.nextId++;
-      const fast = Math.random() < 0.25;
-      return {
-        id, x, y, home,
-        name: NAMES[id % NAMES.length],
-        color: COLORS[id % COLORS.length],
-        shape: "arrow", press: 0, task: null, gen: null, ov: null,
-        idleFor: 0, leaving: false, worked: false, sticky: false,
-        vx: 0, vy: 0, angle: 0,
-        speed: fast ? rand(1000, 1500) : rand(300, 750),
-        force: fast ? rand(3500, 6000) : rand(700, 1800),
-        spin: fast ? rand(2.2, 3.4) : rand(0.8, 1.8),
-        curl: rand(-1, 1), orbit: rand(70, 170), follow: false,
-      };
-    }
-
-    get viewTop() {
-      return this.vp.sy;
-    }
-    get viewBot() {
-      return this.vp.sy + this.vp.vh;
-    }
-    fromViewport(x, y) {
-      const vp = this.vp;
-      return { x: x - vp.ox + vp.sx, y: y - vp.oy + vp.sy };
-    }
-    taskY(t) {
-      return t.layer === "world" ? t.y : this.viewTop + t.y;
-    }
-
-    // screen position of a cursor / an item (for panning and loudness)
-    scr(c) {
-      const vp = this.vp;
-      return c.sticky ? { x: c.x, y: c.y } : { x: c.x - vp.sx + vp.ox, y: c.y - vp.sy + vp.oy };
-    }
-
-    sfxPlace(kind, it, b) {
-      if (!this.sfx) return;
-      const vp = this.vp;
-      b = b || this.bounds(it);
-      let x = b.x + b.w / 2;
-      let y = b.y + b.h / 2;
-      if (!it || it.layer === "world") {
-        x += vp.ox - vp.sx;
-        y += vp.oy - vp.sy;
-      }
-      this.sfx.place(kind, x, y, b.w, b.h, vp.vw, vp.vh, (it && it.fs) || 0);
-    }
-
-    start() {
-      if (this.started || !this.ready) return;
-      this.started = true;
-      this.startTime = this.time;
-      for (const c of this.cursors) {
-        c.follow = false;
-        c.gen = null;
-        c.angle = ((((c.angle + 180) % 360) + 360) % 360) - 180;
-      }
-      if (this.sfx) this.sfx.start();
-      if (this.onStart) this.onStart();
-    }
-
-    bounds(it) {
-      if (it.kind === "text") {
-        let h = it.tb.h;
-        if (it.editing && !it.selAll && it.total) {
-          const lines = Math.max(1, Math.round(it.tb.h / it.lh));
-          h = Math.min(it.tb.h, Math.max(it.lh, Math.ceil((it.shown / it.total) * lines) * it.lh));
-        }
-        const s = it.scale;
-        const ax = it.align === "center" ? it.tb.w * (1 - s) / 2 : it.align === "right" || it.align === "end" ? it.tb.w * (1 - s) : 0;
-        return { x: it.tb.x + it.dx + ax, y: it.tb.y + it.dy, w: it.tb.w * s, h: h * s };
-      }
-      if (it.kind === "line") {
-        return { x: it.x + it.dx, y: it.y + it.dy, w: it.w, h: it.h };
-      }
-      return {
-        x: it.x + it.dx,
-        y: it.y + it.dy,
-        w: it.draw ? it.draw.w : it.w,
-        h: it.draw ? it.draw.h : it.h,
-      };
-    }
-
-    unionBounds(list) {
-      const bs = list.map((it) => this.bounds(it));
-      const x = Math.min(...bs.map((b) => b.x));
-      const y = Math.min(...bs.map((b) => b.y));
-      return { x, y, w: Math.max(...bs.map((b) => b.x + b.w)) - x, h: Math.max(...bs.map((b) => b.y + b.h)) - y };
-    }
-
-    underline(it, b) {
-      return { x: b.x, y: b.y + (it.lh * 0.5 + it.fs * 0.42) * it.scale, w: Math.min(b.w, it.tb.w * it.scale), h: 0 };
-    }
-
-    selection(it, extra) {
-      const b = this.bounds(it);
-      return Object.assign(
-        {
-          t: "box",
-          b,
-          handles: true,
-          badge: `${Math.round(b.w)} × ${Math.round(b.h)}`,
-          rulerLines: true,
-          underline: it.kind === "text" ? this.underline(it, b) : undefined,
-        },
-        extra,
-      );
-    }
-
-    available() {
-      const out = [];
-      for (const t of this.pending) {
-        if (t.state !== "wait") continue;
-        if (t.layer === "world" && t.gate > this.frontier) continue;
-        let ok = true;
-        for (const d of t.deps)
-          if (d.state !== "done") {
-            ok = false;
-            break;
-          }
-        if (ok) out.push(t);
-      }
-      return out;
-    }
-
-    pick(c, list) {
-      let best = null;
-      let bestS = Infinity;
-      const top = this.viewTop - 40;
-      const bot = this.viewBot;
-      const cy = c.sticky ? c.y + this.viewTop : c.y;
-      for (const t of list) {
-        const y = this.taskY(t);
-        const u = y >= top && y <= bot ? 0 : y < top ? 1 : 2;
-        const s = u * 1e6 + (u === 1 ? top - y : y) * 0.6 + Math.abs(y - cy) * 0.4 - (t.spec.type === "guide" ? 5e5 : 0);
-        if (s < bestS) {
-          bestS = s;
-          best = t;
-        }
-      }
-      return best;
-    }
-
-    // work that's unlocked but unfinished (things past the frontier need scrolling, not waiting)
-    backlog() {
-      let n = this.activeCount;
-      for (const t of this.pending) if (t.state === "wait" && (t.layer !== "world" || t.gate <= this.frontier)) n++;
-      return n;
-    }
-
-    // anything still waiting below the frontier (needs scrolling, not waiting)
-    hasBelow() {
-      for (const t of this.pending) if (t.state === "wait" && t.layer === "world" && t.gate > this.frontier) return true;
-      return false;
-    }
-
-    // The next band of unbuilt page content below the frontier (where the tour goes next).
-    nextSection(span) {
-      let top = Infinity;
-      for (const t of this.pending) if (t.state === "wait" && t.layer === "world" && t.gate > this.frontier && t.gate < top) top = t.gate;
-      if (top === Infinity) return null;
-      let bot = top;
-      for (const t of this.pending) if (t.state === "wait" && t.layer === "world" && t.gate > bot && t.gate <= top + span) bot = t.gate;
-      return { top, bot };
-    }
-
-    step(dt) {
-      dt = Math.min(dt, 0.05);
-      this.time += dt;
-      const vp = (this.vp = this.view.vp);
-      let sv = Math.abs(vp.sy - (this.lastScroll == null ? vp.sy : this.lastScroll)) / Math.max(dt, 0.001);
-      this.lastScroll = vp.sy;
-      // tour camera moves aren't the reader rushing ahead, so they don't speed the swarm up
-      if (this.hold) sv = 0;
-      this.vel = Math.max(this.vel * Math.exp(-dt * 1.2), this.vel * 0.7 + sv * 0.3);
-      this.scrollSpeed += (sv - this.scrollSpeed) * (1 - Math.exp(-dt / 0.12));
-      // Let the page come to rest before unlocking what scrolled in, so new work starts
-      // on screen where it can be seen, not at the bottom edge while it's flying past.
-      if (this.started && !this.hold && this.scrollSpeed < SETTLE_SPEED) this.frontier = Math.max(this.frontier, this.viewBot);
-      if (this.pending.length && this.time - (this._compactT || 0) > 0.5) {
-        this._compactT = this.time;
-        this.pending = this.pending.filter((t) => t.state === "wait");
-      }
-      const avail = this.started ? this.available() : [];
-      this.tempo = clamp(2.1 + this.vel / 900 + (avail.length / Math.max(1, this.cursors.length)) * 0.5, 2.1, 4.5) * this.speed;
-
-      if (this.rulers.want > 0) this.rulers.lastNeed = this.time;
-      const rt = this.time - this.rulers.lastNeed < 0.7 ? 1 : 0;
-      this.rulers.t += (rt - this.rulers.t) * Math.min(1, dt * 10);
-      if (Math.abs(rt - this.rulers.t) < 0.002) this.rulers.t = rt;
-
-      for (const g of this.guides) {
-        if (!g.vis) continue;
-        if (g.flash > 0) g.flash = Math.max(0, g.flash - dt * 1.5);
-        const deps = this.guideDeps.get(g) || [];
-        if (g.shownAt == null) g.shownAt = this.time;
-        if (!g.dragging && g.op > 0 && this.time - g.shownAt > 7 && !deps.some((t) => t.state === "active")) g.op = Math.max(0, g.op - dt * 1.2);
-        else if (!g.dragging && deps.every((t) => t.state === "done")) {
-          const last = Math.max(0, ...deps.map((t) => t.doneAt));
-          if (this.time - last > 1.2 && g.op > 0) g.op = Math.max(0, g.op - dt * 1.2);
-        }
-      }
-
-      if (!this.flocking && this.started && this.waitCount === 0) {
-        for (const c of this.cursors)
-          if (!c.task && !c.follow) {
-            c.follow = true;
-            c.gen = null;
-            c.leaving = false;
-            c.ov = null;
-            c.shape = "arrow";
-          }
-        if (this.cursors.every((c) => c.follow)) {
-          this.flocking = true;
-          this.endTime = this.time;
-          if (this.onComplete) this.onComplete();
-        }
-      }
-      if (this.flocking) {
-        this.flock(dt);
-        return;
-      }
-      if (!this.started) {
-        const center = this.fromViewport(vp.ox + vp.vw / 2, vp.oy + vp.vh / 2);
-        if (this.follow(dt, this.cursors, center, 0.7) && this.ready) this.start();
-        return;
-      }
-      if (this.cursors.some((c) => c.follow))
-        this.follow(
-          dt,
-          this.cursors.filter((c) => c.follow),
-        );
-
-      this.spawnCooldown -= dt;
-      const want = clamp(MIN_AGENTS + Math.floor(this.vel / 40) + Math.floor(avail.length / 2), MIN_AGENTS, MAX_AGENTS);
-      const active = this.cursors.filter((c) => !c.leaving).length;
-      const busy = this.cursors.filter((c) => c.task).length;
-      if (active < want && avail.length > active - busy && this.spawnCooldown <= 0) {
-        const left = Math.random() < 0.5;
-        const p = this.fromViewport(left ? vp.ox - 40 : vp.ox + vp.vw + 40, vp.oy + rand(0.2, 0.8) * vp.vh);
-        this.cursors.push(this.makeCursor(p.x, p.y));
-        this.spawnCooldown = 0.035;
-      }
-
-      for (const c of this.cursors) {
-        if (c.task || c.leaving || c.follow) continue;
-        const t = this.pick(c, avail);
-        if (!t) continue;
-        avail.splice(avail.indexOf(t), 1);
-        t.state = "active";
-        this.activeCount++;
-        this.waitCount--;
-        c.task = t;
-        c.worked = true;
-        c.idleFor = 0;
-        if (t.layer !== "world") {
-          c.sticky = true;
-          c.x += vp.ox - vp.sx;
-          c.y += vp.oy - vp.sy;
-        }
-        c.gen = this.run(c, t);
-      }
-
-      for (const c of [...this.cursors]) {
-        if (c.follow) continue;
-        c.press = Math.max(0, c.press - dt * 6);
-        if (c.angle !== 0) c.angle = Math.abs(c.angle) < 0.5 ? 0 : c.angle * (1 - Math.min(1, dt * 10));
-        if (!c.task) {
-          c.idleFor += dt;
-          if (!c.leaving && c.idleFor > 2.5 && this.cursors.filter((m) => !m.leaving).length > MIN_AGENTS && !c.home) {
-            c.leaving = true;
-            c.gen = this.leave(c);
-          }
-          if (!c.gen) c.gen = this.idle(c);
-        }
-        if (c.gen.next(dt).done) {
-          if (c.task) {
-            c.task.state = "done";
-            c.task.doneAt = this.time;
-            this.doneCount++;
-            this.activeCount--;
-            c.task = null;
-            c.ov = null;
-            if (c.sticky) {
-              c.sticky = false;
-              c.x -= vp.ox - vp.sx;
-              c.y -= vp.oy - vp.sy;
-            }
-            c.shape = "arrow";
-          }
-          c.gen = null;
-          if (c.leaving) {
-            if (c.worked) this.retired++;
-            this.cursors.splice(this.cursors.indexOf(c), 1);
-          }
-        }
-      }
-    }
-
-    flockTarget() {
-      if (this.mouse) return this.fromViewport(this.mouse.x, this.mouse.y);
-      const t = this.time;
-      const vp = this.vp;
-      return this.fromViewport(vp.ox + vp.vw * (0.5 + 0.28 * Math.sin(t * 0.37)), vp.oy + vp.vh * (0.5 + 0.25 * Math.sin(t * 0.53 + 1)));
-    }
-
-    flock(dt) {
-      this.spawnCooldown -= dt;
-      if (this.cursors.length < FLOCK_AGENTS && this.spawnCooldown <= 0 && !this.releasing) {
-        const vp = this.vp;
-        const left = Math.random() < 0.5;
-        const p = this.fromViewport(left ? vp.ox - 30 : vp.ox + vp.vw + 30, vp.oy + rand(0.1, 0.9) * vp.vh);
-        const c = this.makeCursor(p.x, p.y);
-        c.follow = true;
-        this.cursors.push(c);
-        this.spawnCooldown = 0.04;
-      }
-      if (this.releasing) {
-        for (const c of [...this.cursors]) {
-          if (!c.gen) c.gen = this.leave(c);
-          if (c.gen.next(dt).done) this.cursors.splice(this.cursors.indexOf(c), 1);
-        }
-        return;
-      }
-      this.follow(dt, this.cursors);
-    }
-
-    // Boids-ish orbit around a target, ported from the original.
-    follow(dt, list, target, scale = 1) {
-      const m = this.mouse ? this.fromViewport(this.mouse.x, this.mouse.y) : null;
-      const o = target || this.flockTarget();
-      const time = this.time;
-      if (m && this.lastT && dt > 0) {
-        const k = Math.min(1, dt * 18);
-        this.tv.x += ((m.x - this.lastT.x) / dt - this.tv.x) * k;
-        this.tv.y += ((m.y - this.lastT.y) / dt - this.tv.y) * k;
-      }
-      this.lastT = m;
-      const R = 135 * scale * (1 + 0.18 * Math.sin(time * 0.55));
-      const swirl = Math.tanh(Math.cos(time * 0.11) * 3);
-      const want = [];
-      for (const c of list) {
-        const vx = c.x - o.x;
-        const vy = c.y - o.y;
-        const d = Math.hypot(vx, vy) || 0.01;
-        const nx = vx / d;
-        const ny = vy / d;
-        const ang = Math.atan2(vy, vx);
-        const off = (c.orbit - 120) * 0.55 * scale;
-        const rr = R * (1 + 0.3 * Math.sin(3 * ang + time * 0.7)) + off;
-        const tang = 300 * (0.7 + c.spin * 0.2) * swirl;
-        const rad = clamp((rr - d) * 4, -2600, 1400);
-        const far = Math.min(1, Math.max(0, (d - rr) / 600));
-        want.push([-ny * tang + nx * rad - ny * c.curl * 400 * far, nx * tang + ny * rad + nx * c.curl * 400 * far]);
-      }
-      for (let i = 0; i < list.length; i++) {
-        const c = list[i];
-        let ax = 0;
-        let ay = 0;
-        let wsum = 0;
-        for (let j = 0; j < list.length; j++) {
-          if (j === i) continue;
-          const q = list[j];
-          const d = Math.hypot(q.x - c.x, q.y - c.y);
-          if (d > 90) continue;
-          const w = 1 - d / 90;
-          ax += q.vx * w;
-          ay += q.vy * w;
-          wsum += w;
-        }
-        let [fx, fy] = want[i];
-        if (wsum > 0) {
-          fx = fx * 0.7 + (ax / wsum) * 0.3;
-          fy = fy * 0.7 + (ay / wsum) * 0.3;
-        }
-        const dist = Math.max(0, Math.hypot(c.x - o.x, c.y - o.y) - 180 * scale);
-        const maxV = c.speed * (1.3 + Math.min(3.2, dist / 90));
-        const L = Math.hypot(fx, fy);
-        if (L > maxV) {
-          fx *= maxV / L;
-          fy *= maxV / L;
-        }
-        let gx = (fx - c.vx) * 6;
-        let gy = (fy - c.vy) * 6;
-        const maxF = c.force * (1.4 + Math.min(5, dist / 50));
-        const G = Math.hypot(gx, gy);
-        if (G > maxF) {
-          gx *= maxF / G;
-          gy *= maxF / G;
-        }
-        c.vx += gx * dt;
-        c.vy += gy * dt;
-        c.x += c.vx * dt;
-        c.y += c.vy * dt;
-      }
-      const R0 = 48;
-      let touched = false;
-      if (m)
-        for (const c of list) {
-          const vx = c.x - m.x;
-          const vy = c.y - m.y;
-          const d = Math.hypot(vx, vy) || 0.01;
-          if (d >= R0) continue;
-          touched = true;
-          const nx = vx / d;
-          const ny = vy / d;
-          c.x = m.x + nx * R0;
-          c.y = m.y + ny * R0;
-          const rel = (c.vx - this.tv.x) * nx + (c.vy - this.tv.y) * ny;
-          if (rel < 0) {
-            c.vx -= nx * rel * 1.6;
-            c.vy -= ny * rel * 1.6;
-          }
-          c.vx += nx * 260;
-          c.vy += ny * 260;
-        }
-      for (const c of list) {
-        if (Math.hypot(c.vx, c.vy) < 30) continue;
-        const d = ((((Math.atan2(c.vy, c.vx) * 180) / Math.PI + 128 - c.angle + 540) % 360) + 360) % 360 - 180;
-        c.angle += d * Math.min(1, dt * 8);
-        c.press = Math.max(0, c.press - dt * 6);
-      }
-      return touched;
-    }
-
-    // ------------------------------------------------------- primitives
-
-    *wait(t) {
-      let n = 0;
-      while (n < t) n += (yield) * this.tempo;
-    }
-
-    *moveTo(c, target, o = {}) {
-      const get = typeof target === "function" ? target : () => target;
-      const x0 = c.x;
-      const y0 = c.y;
-      const p0 = get();
-      const dist = Math.hypot(p0.x - x0, p0.y - y0);
-      if (dist < 0.5) {
-        c.x = p0.x;
-        c.y = p0.y;
-        if (o.onStep) o.onStep();
-        return;
-      }
-      const dur = clamp(0.12 + Math.sqrt(dist) * 0.021, 0.14, 0.9) / (o.speed || 1);
-      const bend = (o.bend != null ? o.bend : (Math.random() < 0.5 ? -1 : 1) * rand(0.04, 0.14)) * Math.min(dist, 600);
-      let t = 0;
-      while (t < dur) {
-        t += (yield) * this.tempo;
-        const k = Math.min(1, t / dur);
-        const e = o.drag || k < 0.15 ? easeInOut(k) : easeOut(k);
-        const p = get();
-        const dx = p.x - x0;
-        const dy = p.y - y0;
-        const L = Math.hypot(dx, dy) || 1;
-        const off = Math.sin(Math.PI * e) * bend;
-        c.x = x0 + dx * e + (-dy / L) * off;
-        c.y = y0 + dy * e + (dx / L) * off;
-        if (o.onStep) o.onStep();
-      }
-      const p = get();
-      c.x = p.x;
-      c.y = p.y;
-      if (o.onStep) o.onStep();
-    }
-
-    *click(c) {
-      c.press = 1;
-      if (this.sfx) this.sfx.press(this.scr(c).x, this.vp.vw);
-      yield* this.wait(0.07);
-    }
-
-    *type(it, c) {
-      const N = it.total;
-      const k = clamp(70 / Math.max(1, N), 0.06, 1);
-      let budget = 0;
-      let i = it.shown;
-      while (i < N) {
-        budget += (yield) * this.tempo;
-        while (i < N && budget > 0) {
-          const ch = it.seq[i];
-          let d = rand(0.012, 0.04);
-          if (ch === " ") d += rand(0, 0.03);
-          if (ch === "\n") d += 0.1;
-          if (Math.random() < 0.025) d += rand(0.08, 0.2);
-          budget -= d * k;
-          i++;
-        }
-        if (c && this.sfx && i > it.shown) this.sfx.key(this.scr(c).x, this.vp.vw, c.id, i - it.shown, /\s/.test(it.seq.slice(it.shown, i)) ? 1 : 0);
-        it.shown = i;
-        bump(it);
-      }
-    }
-
-    *idle(c) {
-      for (;;) {
-        const vp = this.vp;
-        const top = this.viewTop;
-        const bot = this.viewBot;
-        const p = { x: rand(vp.sx + vp.vw * 0.17, vp.sx + vp.vw * 0.83), y: rand(top + (bot - top) * 0.2, top + (bot - top) * 0.8) };
-        yield* this.moveTo(c, p, { speed: 0.35 });
-        let w = rand(0.4, 1.4);
-        while (w > 0) {
-          w -= yield;
-          if (c.y < this.viewTop || c.y > this.viewBot) break;
-        }
-      }
-    }
-
-    *leave(c) {
-      const right = c.x > this.vp.sx + this.vp.vw / 2;
-      yield* this.moveTo(
-        c,
-        () => {
-          const vp = this.vp;
-          return this.fromViewport(right ? vp.ox + vp.vw + 60 : vp.ox - 60, c.y - this.viewTop + vp.oy);
-        },
-        { speed: 0.8 },
-      );
-    }
-
-    run(c, t) {
-      const s = t.spec;
-      switch (s.type) {
-        case "rect":
-          return this.drawBox(c, s.it, false);
-        case "image":
-          return this.drawBox(c, s.it, true);
-        case "line":
-          return this.drawLine(c, s.it);
-        case "text":
-          return this.drawText(c, s.it, s.snap || null, !!s.grow);
-        case "guide":
-          return this.dragGuide(c, s.g);
-        case "dup":
-          return this.duplicate(c, s.g, s.k);
-        case "edit":
-          return this.editText(c, s.it);
-        case "restyle":
-        case "swap":
-          return this.restyle(c, s.it);
-      }
-      return this.wait(0.1);
-    }
-
-    // Where a drag should end so a huge box doesn't drag the cursor off-screen.
-    dragEnd(c, it) {
-      const vp = this.vp;
-      const screen = c.sticky;
-      const right = screen ? vp.ox + vp.vw : vp.sx + vp.vw;
-      const bot = screen ? vp.oy + vp.vh : this.viewBot;
-      const x = it.x + it.w > right - 16 ? Math.max(it.x + Math.min(it.w, 40), right - 30) : it.x + it.w;
-      const y = it.y + it.h > bot - 16 ? Math.max(it.y + Math.min(it.h, 40), bot - 40) : it.y + it.h;
-      return { x: Math.min(x, it.x + it.w), y: Math.min(y, it.y + it.h) };
-    }
-
-    *drawBox(c, it, isImg) {
-      c.shape = "cross";
-      yield* this.moveTo(c, { x: it.x, y: it.y });
-      c.press = 1;
-      it.vis = true;
-      if (it.big) it.styled = true;
-      it.draw = { w: 0, h: 0 };
-      bump(it);
-      c.ov = () => [this.selection(it)];
-      const end = this.dragEnd(c, it);
-      yield* this.moveTo(c, end, {
-        speed: 0.75,
-        drag: true,
-        bend: 0,
-        onStep: () => {
-          it.draw = { w: Math.max(0, c.x - it.x), h: Math.max(0, c.y - it.y) };
-          bump(it);
-        },
-      });
-      if (end.x < it.x + it.w - 0.5 || end.y < it.y + it.h - 0.5) {
-        const w0 = it.draw.w;
-        const h0 = it.draw.h;
-        let k = 0;
-        while (k < 1) {
-          k = Math.min(1, k + ((yield) * this.tempo) / 0.5);
-          const e = easeOut(k);
-          it.draw = { w: w0 + (it.w - w0) * e, h: h0 + (it.h - h0) * e };
-          bump(it);
-        }
-      }
-      it.draw = null;
-      bump(it);
-      c.shape = "arrow";
-      yield* this.wait(rand(0.18, 0.3));
-      it.styled = true;
-      bump(it);
-      this.sfxPlace(isImg ? "image" : "rect", it);
-      yield* this.wait(isImg ? 0.5 : 0.35);
-      c.ov = null;
-      it.done = true;
-      bump(it);
-    }
-
-    *drawLine(c, it) {
-      c.shape = "pen-add";
-      yield* this.moveTo(c, it.pts[0]);
-      yield* this.click(c);
-      it.vis = true;
-      it.edit = true;
-      it.placed = 1;
-      it.owner = c;
-      bump(it);
-      this.editLines.add(it);
-      c.shape = "pen";
-      for (let i = 1; i < it.pts.length; i++) {
-        yield* this.moveTo(c, it.pts[i], { bend: rand(-0.03, 0.03) });
-        yield* this.click(c);
-        it.placed = i + 1;
-        bump(it);
-        yield* this.wait(rand(0.04, 0.12));
-      }
-      it.owner = null;
-      bump(it);
-      yield* this.moveTo(c, { x: c.x + rand(14, 30), y: c.y + rand(10, 24) }, { speed: 1.4 });
-      yield* this.wait(0.3);
-      it.edit = false;
-      this.editLines.delete(it);
-      it.done = true;
-      bump(it);
-      this.sfxPlace("line", it);
-    }
-
-    *drawText(c, it, guide, grow) {
-      if (guide) {
-        if (guide.axis === "x") {
-          it.dx = rand(28, 64);
-          it.dy = rand(-8, 8);
-        } else {
-          it.dx = rand(-8, 8);
-          it.dy = rand(18, 34) * (Math.random() < 0.5 ? -1 : 1);
-        }
-      }
-      if (grow) it.scale = Math.min(1, 18 / it.fs);
-      const b0 = this.bounds(it);
-      c.shape = "cross";
-      yield* this.moveTo(c, { x: b0.x, y: b0.y });
-      const lineH = Math.min(b0.h, it.lh * it.scale);
-      if (b0.w < 140 && it.tb.h < it.lh * 1.6) {
-        yield* this.click(c);
-      } else {
-        c.press = 1;
-        const ghost = { x: b0.x, y: b0.y, w: 0, h: 0 };
-        c.ov = () => [{ t: "box", b: ghost, handles: true, badge: `${Math.round(ghost.w)} × ${Math.round(ghost.h)}`, rulerLines: true }];
-        yield* this.moveTo(
-          c,
-          { x: b0.x + b0.w, y: b0.y + lineH },
-          {
-            speed: 0.9,
-            drag: true,
-            bend: 0,
-            onStep: () => {
-              ghost.w = Math.max(0, c.x - b0.x);
-              ghost.h = Math.max(0, c.y - b0.y);
-            },
-          },
-        );
-      }
-      it.vis = true;
-      it.editing = true;
-      it.shown = 0;
-      bump(it);
-      c.shape = "ibeam";
-      c.ov = () => [{ t: "box", b: this.bounds(it) }];
-      yield* this.moveTo(c, { x: c.x + rand(-30, 10), y: c.y + rand(10, 30) }, { speed: 1.5 });
-      yield* this.type(it, c);
-      yield* this.wait(0.12);
-      it.editing = false;
-      bump(it);
-      this.sfxPlace("text", it);
-      c.shape = "arrow";
-      c.ov = () => [this.selection(it)];
-      if (grow) {
-        const steps = [24, 32, 40, 48, 56, 64, 72, 88, 104].filter((s) => s < it.fs && s > 18);
-        let k = 0;
-        for (const s of [...steps, it.fs]) {
-          yield* this.wait(0.06);
-          it.scale = s / it.fs;
-          bump(it);
-          if (this.sfx) this.sfx.grow(k++, this.scr(c).x, this.vp.vw);
-        }
-        it.scale = 1;
-        bump(it);
-        yield* this.wait(0.15);
-      }
-      if (guide) {
-        // give the guide a moment to land; never block a cursor on it
-        let waited = 0;
-        while (guide.task.state !== "done" && waited < 1.6) waited += (yield) * this.tempo;
-        if (guide.task.state !== "done") guide = null;
-      }
-      if (guide) {
-        const u = this.bounds(it);
-        const a = { x: u.x + Math.min(u.w * 0.4, 60) + rand(-6, 6), y: u.y + Math.min(u.h * 0.5, 22) };
-        yield* this.moveTo(c, a);
-        c.press = 1;
-        const p = { x: a.x - it.dx, y: a.y - it.dy };
-        const m = {
-          x: p.x + (guide.axis === "x" ? -rand(2, 5) : rand(-6, 6)),
-          y: p.y + (guide.axis === "y" ? -rand(2, 5) : rand(-3, 3)),
-        };
-        const drag = () => {
-          let h = c.x - p.x;
-          let v = c.y - p.y;
-          if (guide.axis === "x" && Math.abs(h) < 9) {
-            if (h !== 0 && it.dx !== 0) {
-              if (guide.flash < 0.5 && this.sfx) this.sfx.snap(this.scr(c).x, this.vp.vw);
-              guide.flash = 1;
-            }
-            h = 0;
-          }
-          if (guide.axis === "y" && Math.abs(v) < 9) {
-            if (v !== 0 && it.dy !== 0) {
-              if (guide.flash < 0.5 && this.sfx) this.sfx.snap(this.scr(c).x, this.vp.vw);
-              guide.flash = 1;
-            }
-            v = 0;
-          }
-          it.dx = h;
-          it.dy = v;
-          bump(it);
-        };
-        yield* this.moveTo(c, m, { speed: 0.6, drag: true, onStep: drag });
-        yield* this.wait(0.1);
-        yield* this.moveTo(c, p, { speed: 2, onStep: drag });
-        it.dx = 0;
-        it.dy = 0;
-        bump(it);
-        yield* this.wait(0.25);
-      } else if (it.dx || it.dy) {
-        const dx0 = it.dx;
-        const dy0 = it.dy;
-        let k = 0;
-        while (k < 1) {
-          k = Math.min(1, k + ((yield) * this.tempo) / 0.3);
-          const e = easeInOut(k);
-          it.dx = dx0 * (1 - e);
-          it.dy = dy0 * (1 - e);
-          bump(it);
-        }
-        yield* this.wait(0.15);
-      } else yield* this.wait(0.2);
-      c.ov = null;
-      it.done = true;
-      bump(it);
-    }
-
-    *dragGuide(c, g) {
-      this.rulers.want++;
-      try {
-        const r = rand(-0.15, 0.15);
-        const from = () => {
-          const vp = this.vp;
-          return g.axis === "x"
-            ? this.fromViewport(vp.ox + 10, vp.oy + vp.vh * (0.45 + r))
-            : this.fromViewport(vp.ox + vp.vw * 0.3 + r * 200, vp.oy + 10);
-        };
-        c.shape = "arrow";
-        yield* this.moveTo(c, from);
-        while (this.rulers.t < 0.95) yield;
-        yield* this.moveTo(c, from, { speed: 3 });
-        c.press = 1;
-        c.shape = g.axis === "x" ? "ew" : "ns";
-        g.vis = true;
-        g.dragging = true;
-        g.op = 1;
-        const upd = () => {
-          g.cur = g.axis === "x" ? c.x : c.y;
-        };
-        upd();
-        const to = () => {
-          const s = from();
-          return g.axis === "x" ? { x: g.pos, y: s.y + 40 } : { x: s.x + 30, y: g.pos };
-        };
-        yield* this.moveTo(c, to, { speed: 0.55, drag: true, onStep: upd });
-        g.cur = g.pos;
-        g.dragging = false;
-        if (this.sfx) {
-          const p = this.scr(c);
-          this.sfx.place("guide", p.x, p.y, 1, 1, this.vp.vw, this.vp.vh, 0);
-        }
-        c.shape = "arrow";
-        yield* this.wait(0.25);
-      } finally {
-        this.rulers.want--;
-      }
-    }
-
-    *duplicate(c, g, k) {
-      const dst = g.dst[k];
-      let src = g.src;
-      const cand = [g.src, ...g.dst.filter((d) => d.task.state === "done")];
-      const dd = (a) => Math.hypot(a.box.x - dst.box.x, a.box.y - dst.box.y);
-      for (const s of cand) if (dd(s) < dd(src)) src = s;
-      const sb = this.unionBounds(src.items);
-      c.shape = "arrow";
-      const u = { x: sb.x + Math.min(sb.w * 0.45, 70) + rand(-8, 8), y: sb.y + Math.min(sb.h * 0.45, 30) + rand(-4, 4) };
-      yield* this.moveTo(c, u);
-      yield* this.click(c);
-      c.ov = () => [{ t: "box", b: sb, handles: true, badge: `${Math.round(sb.w)} × ${Math.round(sb.h)}` }];
-      yield* this.wait(rand(0.15, 0.3));
-      c.shape = "dup";
-      yield* this.wait(0.12);
-      c.press = 1;
-      const ox = src.box.x - dst.box.x;
-      const oy = src.box.y - dst.box.y;
-      for (const it of dst.items) {
-        it.vis = true;
-        it.mode = "master";
-        it.dx = ox;
-        it.dy = oy;
-        if (it.kind === "rect" || it.kind === "image") {
-          it.styled = true;
-          it.draw = null;
-        }
-        if (it.kind === "line") {
-          it.placed = it.pts.length;
-        }
-        bump(it);
-      }
-      const m = { x: u.x - ox, y: u.y - oy };
-      c.ov = () => {
-        const cb = this.unionBounds(dst.items);
-        const h = [
-          { t: "box", b: sb, color: "red" },
-          { t: "box", b: cb, color: "red" },
-        ];
-        const sp = this.spacing(sb, cb);
-        if (sp) h.push(sp);
-        return h;
-      };
-      yield* this.moveTo(c, m, {
-        speed: 0.6,
-        drag: true,
-        onStep: () => {
-          for (const it of dst.items) {
-            it.dx = ox + (c.x - u.x);
-            it.dy = oy + (c.y - u.y);
-            bump(it);
-          }
-        },
-      });
-      this.sfxPlace("dup", dst.items[0], this.unionBounds(dst.items));
-      for (const it of dst.items) {
-        it.dx = 0;
-        it.dy = 0;
-        it.settle = true;
-        if (!it.editTask) it.mode = "own";
-        if (it.kind === "text" && it.mode === "own") it.shown = it.total;
-        bump(it);
-      }
-      yield* this.wait(0.1);
-      c.shape = "arrow";
-      c.ov = () => {
-        const cb = this.unionBounds(dst.items);
-        return [{ t: "box", b: cb, handles: true, badge: `${Math.round(cb.w)} × ${Math.round(cb.h)}` }];
-      };
-      yield* this.wait(0.35);
-      for (const it of dst.items)
-        if (!it.editTask) {
-          it.done = true;
-          bump(it);
-        }
-    }
-
-    spacing(a, b) {
-      const oy = Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y);
-      const ox = Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x);
-      if (oy > 0) {
-        const y = Math.max(a.y, b.y) + oy / 2;
-        const [l, r] = a.x < b.x ? [a, b] : [b, a];
-        const gap = r.x - (l.x + l.w);
-        if (gap > 0) return { t: "measure", a: { x: l.x + l.w, y }, b: { x: r.x, y }, label: String(Math.round(gap)) };
-      } else if (ox > 0) {
-        const x = Math.max(a.x, b.x) + ox / 2;
-        const [t, btm] = a.y < b.y ? [a, b] : [b, a];
-        const gap = btm.y - (t.y + t.h);
-        if (gap > 0) return { t: "measure", a: { x, y: t.y + t.h }, b: { x, y: btm.y }, label: String(Math.round(gap)) };
-      }
-      return null;
-    }
-
-    *editText(c, it) {
-      c.shape = "arrow";
-      const b = this.bounds(it);
-      yield* this.moveTo(c, { x: b.x + Math.min(b.w * 0.5, 50) + rand(-5, 5), y: b.y + Math.min(it.lh, b.h) * 0.55 });
-      yield* this.click(c);
-      yield* this.wait(0.08);
-      yield* this.click(c);
-      it.selAll = true;
-      it.editing = true;
-      bump(it);
-      c.shape = "ibeam";
-      c.ov = () => [{ t: "box", b: this.bounds(it) }];
-      yield* this.wait(rand(0.2, 0.35));
-      it.mode = "own";
-      it.selAll = false;
-      it.shown = 0;
-      bump(it);
-      yield* this.type(it, c);
-      yield* this.wait(0.12);
-      it.editing = false;
-      bump(it);
-      c.shape = "arrow";
-      c.ov = () => [this.selection(it)];
-      this.sfxPlace("edit", it);
-      yield* this.wait(0.3);
-      c.ov = null;
-      it.done = true;
-      bump(it);
-    }
-
-    *restyle(c, it) {
-      c.shape = "arrow";
-      const b = this.bounds(it);
-      yield* this.moveTo(c, { x: b.x + Math.min(b.w * 0.5, 60) + rand(-6, 6), y: b.y + Math.min(b.h * 0.5, 30) + rand(-4, 4) });
-      yield* this.click(c);
-      c.ov = () => [this.selection(it)];
-      yield* this.wait(rand(0.15, 0.3));
-      it.mode = "own";
-      bump(it);
-      this.sfxPlace(it.kind === "image" ? "image" : "restyle", it);
-      yield* this.wait(0.4);
-      c.ov = null;
-      it.done = true;
-      bump(it);
-    }
-  }
-
-  // ------------------------------------------------------------------ sound
 
   // A soft mallet instrument in D. Every finished piece of the page plays one note of
   // the D minor pentatonic on a gentle 8th-note grid, so a busy swarm comes out as a
@@ -3916,130 +906,139 @@
     }
   }
 
-  // -------------------------------------------------------------------- app
+  // ------------------------------------------------------------------------- app
 
   class App {
     constructor() {
+      this.env = new Env();
+      this.stage = new Stage();
       this.dead = false;
-      this.t0 = performance.now();
-      this.tour = true; // glide through the page on its own; T or the button turns it off
-      this.tourJump = null;
-      this.tourDwell = 0;
-      this.speeds = [1, 2, 3];
-      // reduced motion: build at top speed so the show is short
-      this.speedIx = REDUCED() ? 2 : 0;
-      this.complete = false;
-      this.timing = {};
-    }
-
-    async loadShot() {
-      let src = window.__swarmShot;
-      window.__swarmShot = null;
-      if (src) lastShot = { src, at: this.env.geom() };
-      else if (lastShot) src = lastShot.src; // Replay reuses the click-time screenshot
-      if (!src) return null;
-      const img = new Image();
-      img.src = src;
-      try {
-        await img.decode();
-      } catch (_) {
-        return null;
-      }
-      const g = lastShot && lastShot.src === src ? lastShot.at : this.env.geom();
-      return { img, sx: g.sx, sy: g.sy, scale: img.naturalWidth / innerWidth, valid: false };
-    }
-
-    async run() {
-      this.env = detectEnv();
-      const shotP = this.loadShot();
-      this.view = new View(this.env);
-      this.engine = new Engine(this.view);
+      this.speed = reduced() ? 3 : 1;
+      this.tour = true; // on by default: glide through the page on its own
+      this.units = [];
+      this.waiting = [];
+      this.active = [];
+      this.bands = []; // finished rows of the page, content px
+      this.scanned = [];
+      this.sweep = null;
+      this.jump = null;
+      this.frontier = -Infinity;
+      this.done = 0;
+      this.time = 0;
+      this.intro = 0;
+      this.hidden = false;
+      this.outro = null;
+      this.lastTop = null;
+      this.speedPx = 0;
+      this.restFor = 0;
+      this.dwell = 0;
+      this.focus = null;
+      this.nibs = [];
+      this.anchor = null;
+      this.dt = 0;
+      this.startedAt = performance.now();
+      this.pageBg = this.readPageBg();
+      this.dark = luminance(this.pageBg) < 0.45;
+      this.mount();
+      this.scanner = new Scanner(this.env, this.host, this.stage);
+      this.makeNibs();
       this.sfx = new Sound();
       this.sfx.init();
-      this.engine.sfx = this.sfx;
-      this.engine.onStart = () => this.view.intro.classList.add("gone");
-      this.engine.onComplete = () => this.onComplete();
-      this.engine.speed = this.speeds[this.speedIx];
-      const spd = this.view.root.querySelector('[data-a="speed"]');
-      spd.textContent = this.speeds[this.speedIx] + "×";
-      spd.setAttribute("aria-label", `Build speed ${spd.textContent}`);
       this.bind();
-      this.last = performance.now();
-      this.raf = requestAnimationFrame((t) => this.frame(t));
-      await nextFrame();
       this.renderSoundBtn();
       this.sfx.intro();
-      this.view.bg.classList.add("on");
-      this.view.intro.classList.add("on");
-      this.view.hud.classList.add("on");
-      if (hudPrefs.pos) this.placeHud(hudPrefs.pos.x, hudPrefs.pos.y);
-      if (hudPrefs.hidden) this.view.hud.classList.add("gone");
-      const mark = (k) => (this.timing[k] = Math.round(performance.now() - this.t0));
-      await sleep(520);
-      await unhidePage();
-      mark("blank");
-      if (this.dead) return;
-      await this.scan();
-      mark("scan");
-      if (this.dead) return;
-      try {
-        await Promise.race([document.fonts.ready, sleep(1200)]);
-      } catch (_) {}
-      mark("fonts");
-      // finish scroll-reveal / intro animations and describe looping ones (settle.js)
-      this.settled = await settlePage("settle");
-      if (this.settled) console.debug("[swarmline] settled", this.settled);
-      await nextFrame();
-      await nextFrame();
-      mark("settle");
-      if (this.dead) return;
-      this.view.measure();
-      const shot = await shotP;
-      if (shot) {
-        const g = this.env.geom();
-        shot.valid = Math.abs(g.sx - shot.sx) < 1 && Math.abs(g.sy - shot.sy) < 1;
-      }
-      const canvases = await grabCanvases();
-      let model;
-      try {
-        model = captureModel(this.env, shot, { canvases });
-      } catch (err) {
-        console.error("[swarmline] capture failed", err);
-        model = { items: [], tasks: [], groups: [], guides: [], docW: 0, docH: 0, loops: [] };
-      }
-      // hand scroll-linked animations back to the page now that we've read it
-      if (this.settled) settlePage("restore");
-      mark("capture");
-      if (this.dead) return;
-      this.view.mount(model);
-      this.engine.setModel(model);
-      this.model = model;
-      mark("mount");
-      const wait = 1500 - (performance.now() - this.t0);
-      if (wait > 0) await sleep(wait);
-      if (this.dead) return;
-      this.engine.start();
+      this.last = performance.now();
+      this.raf = requestAnimationFrame((t) => this.frame(t));
     }
 
-    async scan() {
-      const env = this.env;
-      const g = env.geom();
-      const H = env.scrollHeight();
-      if (H <= g.vh * 1.25) return;
-      this.view.frozen = { ...this.view.vp };
-      const steps = Math.min(28, Math.ceil(H / (g.vh * 0.85)));
-      for (let i = 1; i <= steps && !this.dead; i++) {
-        env.scrollTo(Math.min(H, (H / steps) * i));
-        await nextFrame();
-        await sleep(30);
-        // an infinite feed just loaded more: stop before it keeps loading (and logging views)
-        if (env.scrollHeight() > H + g.vh * 1.5) break;
+    readPageBg() {
+      for (const e of [document.body, document.documentElement]) {
+        if (!e) continue;
+        const c = getComputedStyle(e).backgroundColor;
+        if (alphaOf(c) > 0.5) return c;
       }
-      env.scrollTo(g.sy, g.sx);
-      await nextFrame();
-      await sleep(750);
-      env.scrollTo(g.sy, g.sx);
-      this.view.frozen = null;
+      return "rgb(255, 255, 255)";
+    }
+
+    mount() {
+      for (const old of document.querySelectorAll("swarmline-layer")) old.remove();
+      const host = document.createElement("swarmline-layer");
+      host.style.cssText = "all:initial !important;position:fixed !important;inset:0 !important;z-index:2147483647 !important;display:block !important;visibility:visible !important;pointer-events:none !important;contain:strict !important;";
+      const root = host.attachShadow({ mode: "closed" }); // page scripts can't reach in
+      root.innerHTML = `<style>${STYLE}</style>
+<canvas aria-hidden="true"></canvas>
+<div class="hud" role="toolbar" aria-label="Swarmline">
+  <svg class="mark" viewBox="0 0 128 128" aria-hidden="true"><defs><linearGradient id="swl-g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#FF5470"/><stop offset=".52" stop-color="#9B4DFF"/><stop offset="1" stop-color="#2E6BFF"/></linearGradient></defs><rect width="128" height="128" rx="30" fill="url(#swl-g)"/><path d="M86 56 V44 a12 12 0 0 0 -12 -12 H32 a12 12 0 0 0 -12 12 V84 a12 12 0 0 0 12 12 H62" fill="none" stroke="#fff" stroke-width="10" stroke-linecap="round"/><path d="M35 62 H64" stroke="#fff" stroke-width="9" stroke-linecap="round"/><path d="M82 60 L82 93.6 L90.5 86 L96.1 98.5 L102.6 95.6 L97 83.3 L108.2 83.1 Z" fill="#fff" stroke="#24104F" stroke-width="3" stroke-linejoin="round"/></svg>
+  <div class="meta" aria-live="polite"><span class="t">Clearing the canvas…</span><span class="s">&nbsp;</span></div>
+  <button data-a="tour" class="${this.tour ? "on" : ""}" aria-pressed="${this.tour}" title="Glide through the page screen by screen (T)">Auto-tour</button>
+  <button data-a="speed" title="Build speed" aria-label="Build speed 1×">1×</button>
+  <button data-a="sound" class="snd" title="Sound (M)" aria-label="Sound (M)"></button>
+  <button data-a="finish" title="Show the finished page now (F)">Finish</button>
+  <button data-a="replay" class="pri" hidden title="Build the page again">Replay</button>
+  <button data-a="hide" class="ico" title="Hide the controls for a clean recording (H) · drag the bar to move it" aria-label="Hide controls"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3l18 18"/><path d="M10.6 5.1A10.5 10.5 0 0 1 12 5c6 0 9.5 7 9.5 7a17 17 0 0 1-3.2 4.1M6.6 6.6C3.9 8.4 2.5 12 2.5 12s3.5 7 9.5 7a9.6 9.6 0 0 0 5.4-1.6"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg></button>
+  <button data-a="close" class="x" title="Exit (Esc)" aria-label="Exit Swarmline">✕</button>
+  <div class="bar" aria-hidden="true"><i></i></div>
+</div>
+<div class="toast" role="status"></div>`;
+      document.documentElement.appendChild(host);
+      this.host = host;
+      this.root = root;
+      this.cv = root.querySelector("canvas");
+      this.g = this.cv.getContext("2d");
+      this.hud = root.querySelector(".hud");
+      this.$ = (s) => root.querySelector(s);
+      this.$('[data-a="speed"]').textContent = this.speed + "×";
+      this.toast = root.querySelector(".toast");
+      this.resize();
+      if (prefs.hudPos) this.placeHud(prefs.hudPos.x, prefs.hudPos.y);
+      if (prefs.hudHidden) this.hud.classList.add("gone");
+    }
+
+    // ---------------------------------------------------------------- toolbar
+
+    // hide or show the controls (H), e.g. for a clean screen recording
+    setHud(show, quiet) {
+      prefs.hudHidden = !show;
+      this.hud.classList.toggle("gone", !show);
+      if (!show && !quiet) this.say("Controls hidden · press <kbd>H</kbd> to bring them back");
+    }
+
+    say(html, ms = 2200) {
+      const t = this.toast;
+      t.innerHTML = html;
+      t.classList.add("on");
+      clearTimeout(this._toastT);
+      this._toastT = setTimeout(() => t.classList.remove("on"), ms);
+    }
+
+    // put the bar at a spot on screen (kept inside the window)
+    placeHud(x, y) {
+      const h = this.hud;
+      const w = h.offsetWidth || 560;
+      const ht = h.offsetHeight || 44;
+      const px = clamp(x, 8, Math.max(8, innerWidth - w - 8));
+      const py = clamp(y, 8, Math.max(8, innerHeight - ht - 8));
+      h.classList.add("placed");
+      h.style.left = px + "px";
+      h.style.top = py + "px";
+      prefs.hudPos = { x: px, y: py };
+    }
+
+    resetHud() {
+      const h = this.hud;
+      h.classList.remove("placed");
+      h.style.left = "";
+      h.style.top = "";
+      prefs.hudPos = null;
+    }
+
+    resize() {
+      const dpr = Math.min(2, window.devicePixelRatio || 1);
+      this.dpr = dpr;
+      this.W = innerWidth;
+      this.H = innerHeight;
+      this.cv.width = Math.round(this.W * dpr);
+      this.cv.height = Math.round(this.H * dpr);
     }
 
     bind() {
@@ -4047,137 +1046,85 @@
         t.addEventListener(ev, fn, o);
         (this.unbinds || (this.unbinds = [])).push(() => t.removeEventListener(ev, fn, o));
       };
-      const scrollTarget = this.env.isRoot ? window : this.env.scroller;
-      on(scrollTarget, "scroll", () => {
-        if (!this.view.frozen) this.view.syncWorld();
-      }, { passive: true });
-      on(window, "resize", () => this.view.measure());
-      on(window, "wheel", () => {
-        if (this.tourJump) this.endJump(); // the reader took the wheel
-        if (this.engine.ready) this.engine.start();
-      }, { passive: true });
-      on(window, "pointermove", (e) => {
-        this.engine.mouse = { x: e.clientX, y: e.clientY };
-      }, { passive: true });
-      on(document.documentElement, "pointerleave", () => {
-        this.engine.mouse = null;
+      on(window, "resize", () => {
+        this.resize();
+        if (prefs.hudPos) this.placeHud(prefs.hudPos.x, prefs.hudPos.y);
       });
+      on(window, "pagehide", () => stop(true));
+      on(window, "pointermove", (e) => {
+        if (e.pointerType === "touch") return;
+        this.mouse = { x: e.clientX, y: e.clientY };
+      }, { passive: true, capture: true });
+      on(window, "wheel", () => {
+        if (this.jump) this.jump = null; // the reader took over
+      }, { passive: true });
+      if (this.env.el) {
+        on(this.cv, "wheel", (e) => {
+          e.preventDefault();
+          this.jump = null;
+          this.env.el.scrollBy({ top: e.deltaY, left: e.deltaX, behavior: "instant" });
+        }, { passive: false });
+      }
       on(window, "keydown", (e) => {
+        const tgt = e.composedPath()[0];
+        if (tgt && (tgt.isContentEditable || /^(input|textarea|select)$/i.test(tgt.localName || ""))) return;
         if (e.key === "Escape") {
           e.stopPropagation();
-          stop(false);
-        } else if ((e.key === "m" || e.key === "M") && !e.metaKey && !e.ctrlKey && !e.altKey) {
+          stop();
+        } else if ((e.key === "t" || e.key === "T") && !e.ctrlKey && !e.metaKey && !e.altKey && !this.outro) this.setTour(!this.tour);
+        else if ((e.key === "f" || e.key === "F") && !e.ctrlKey && !e.metaKey && !e.altKey) this.finish();
+        else if ((e.key === "h" || e.key === "H") && !e.ctrlKey && !e.metaKey && !e.altKey) this.setHud(prefs.hudHidden);
+        else if ((e.key === "m" || e.key === "M") && !e.ctrlKey && !e.metaKey && !e.altKey) {
           this.sfx.setOn(!this.sfx.on);
           this.renderSoundBtn();
-        } else if ((e.key === "h" || e.key === "H") && !e.metaKey && !e.ctrlKey && !e.altKey) {
-          this.setHud(hudPrefs.hidden);
-        } else if ((e.key === "t" || e.key === "T") && !e.metaKey && !e.ctrlKey && !e.altKey && !this.complete) {
-          this.setTour(!this.tour);
         }
         this.unlockSound();
       }, true);
-      // browsers only let audio start after a click/keypress on the page
+      // browsers only let audio start after a click or key press on the page
       on(window, "pointerdown", () => this.unlockSound(), true);
-      if (!this.env.isRoot) {
-        on(this.view.host, "wheel", (e) => {
-          e.preventDefault();
-          this.env.scroller.scrollBy({ top: e.deltaY, left: e.deltaX, behavior: "instant" });
-        }, { passive: false });
-      }
-      // drag the toolbar anywhere (double-click puts it back)
+      // drag the bar anywhere (double-click puts it back at the bottom)
       let drag = null;
-      on(this.view.hud, "pointerdown", (e) => {
+      on(this.hud, "pointerdown", (e) => {
         if (e.button !== 0 || e.target.closest("button")) return;
-        const r = this.view.hud.getBoundingClientRect();
+        const r = this.hud.getBoundingClientRect();
         drag = { dx: e.clientX - r.left, dy: e.clientY - r.top, id: e.pointerId };
-        this.view.hud.setPointerCapture(e.pointerId);
-        this.view.hud.classList.add("dragging");
+        this.hud.setPointerCapture(e.pointerId);
+        this.hud.classList.add("dragging");
         e.preventDefault();
       });
-      on(this.view.hud, "pointermove", (e) => {
+      on(this.hud, "pointermove", (e) => {
         if (drag && e.pointerId === drag.id) this.placeHud(e.clientX - drag.dx, e.clientY - drag.dy);
       });
       const endDrag = (e) => {
         if (!drag || e.pointerId !== drag.id) return;
         drag = null;
-        this.view.hud.classList.remove("dragging");
+        this.hud.classList.remove("dragging");
       };
-      on(this.view.hud, "pointerup", endDrag);
-      on(this.view.hud, "pointercancel", endDrag);
-      on(this.view.hud, "dblclick", (e) => {
+      on(this.hud, "pointerup", endDrag);
+      on(this.hud, "pointercancel", endDrag);
+      on(this.hud, "dblclick", (e) => {
         if (!e.target.closest("button")) this.resetHud();
       });
-      on(window, "resize", () => {
-        if (hudPrefs.pos) this.placeHud(hudPrefs.pos.x, hudPrefs.pos.y);
-      });
-      on(this.view.hud, "click", (e) => {
+      on(this.hud, "click", (e) => {
         const b = e.target.closest("button");
         if (!b) return;
         const a = b.dataset.a;
-        if (a === "hide") this.setHud(false);
-        else if (a === "close") stop(false);
-        else if (a === "live") stop(true);
-        else if (a === "replay") restart();
-        else if (a === "tour") this.setTour(!this.tour); else if (a === "sound") {
+        if (a === "close") stop();
+        else if (a === "hide") this.setHud(false);
+        else if (a === "sound") {
           if (this.sfx.on && this.sfx.blocked) this.sfx.resume();
           else this.sfx.setOn(!this.sfx.on);
           setTimeout(() => this.renderSoundBtn(), 60);
-        } else if (a === "speed") {
-          this.speedIx = (this.speedIx + 1) % this.speeds.length;
-          this.engine.speed = this.speeds[this.speedIx];
-          b.textContent = this.speeds[this.speedIx] + "×";
-          b.setAttribute("aria-label", `Build speed ${b.textContent}`);
+        }
+        else if (a === "tour") this.setTour(!this.tour);
+        else if (a === "finish") this.finish();
+        else if (a === "replay") replay();
+        else if (a === "speed") {
+          this.speed = this.speed >= 3 ? 1 : this.speed + 1;
+          b.textContent = this.speed + "×";
+          b.setAttribute("aria-label", `Build speed ${this.speed}×`);
         }
       });
-    }
-
-    // ---- toolbar: hide (H) for clean recordings, drag to move, double-click to reset
-    setHud(show, quiet) {
-      hudPrefs.hidden = !show;
-      this.view.hud.classList.toggle("gone", !show);
-      if (!show && !quiet) this.say("Controls hidden · press <kbd>H</kbd> to bring them back");
-    }
-
-    say(html, ms = 2200) {
-      const t = this.view.root.querySelector(".toast");
-      if (!t) return;
-      t.innerHTML = html;
-      t.classList.add("on");
-      clearTimeout(this._toastT);
-      this._toastT = setTimeout(() => t.classList.remove("on"), ms);
-    }
-
-    placeHud(x, y) {
-      const h = this.view.hud;
-      const w = h.offsetWidth || 560;
-      const ht = h.offsetHeight || 40;
-      const px = clamp(x, 8, Math.max(8, innerWidth - w - 8));
-      const py = clamp(y, 8, Math.max(8, innerHeight - ht - 8));
-      h.classList.add("placed");
-      h.style.left = px + "px";
-      h.style.top = py + "px";
-      hudPrefs.pos = { x: px, y: py };
-    }
-
-    resetHud() {
-      const h = this.view.hud;
-      h.classList.remove("placed");
-      h.style.left = "";
-      h.style.top = "";
-      hudPrefs.pos = null;
-    }
-
-    setTour(on) {
-      const b = this.view.root.querySelector('[data-a="tour"]');
-      this.tour = on;
-      if (b) {
-        b.classList.toggle("on", on);
-        b.textContent = on ? "Touring" : "Tour";
-        b.setAttribute("aria-pressed", String(on));
-      }
-      this.tourDwell = 0;
-      if (on) this.engine.start();
-      else this.endJump();
     }
 
     unlockSound() {
@@ -4187,7 +1134,7 @@
     }
 
     renderSoundBtn() {
-      const b = this.view.root.querySelector('[data-a="sound"]');
+      const b = this.$('[data-a="sound"]');
       if (!b || !this.sfx) return;
       const tap = this.sfx.on && this.sfx.blocked;
       const key = this.sfx.on ? (tap ? "tap" : "on") : "off";
@@ -4202,257 +1149,1760 @@
       b.setAttribute("aria-label", tap ? "Tap for sound (M)" : b.title);
     }
 
+    setTour(on) {
+      this.tour = on;
+      this.dwell = 0;
+      if (!on) this.jump = null;
+      const b = this.$('[data-a="tour"]');
+      b.classList.toggle("on", on);
+      b.setAttribute("aria-pressed", String(on));
+    }
+
+    // ---------------------------------------------------------------- bands
+
+    covered(a, b) {
+      for (const k of this.bands) if (k.top <= a + 1 && k.bottom >= b - 1) return true;
+      return false;
+    }
+    gapIn(a, b) {
+      let y = a;
+      for (const k of this.bands) {
+        if (k.bottom <= y) continue;
+        if (k.top > y + 1) return { top: y, bottom: Math.min(b, k.top) };
+        y = Math.max(y, k.bottom);
+        if (y >= b - 1) return null;
+      }
+      return y < b - 1 ? { top: y, bottom: b } : null;
+    }
+    addBand(list, top, bottom) {
+      list.push({ top, bottom });
+      list.sort((p, q) => p.top - q.top);
+      const out = [];
+      for (const k of list) {
+        const l = out[out.length - 1];
+        if (l && k.top <= l.bottom + 1) l.bottom = Math.max(l.bottom, k.bottom);
+        else out.push({ ...k });
+      }
+      return out;
+    }
+    scannedCovers(a, b) {
+      for (const k of this.scanned) if (k.top <= a + 1 && k.bottom >= b - 1) return true;
+      return false;
+    }
+
+    // ---------------------------------------------------------------- units
+
+    register(list) {
+      const fresh = list.slice();
+      for (const u of list) {
+        this.units.push(u);
+        // already on the page (an earlier sweep put it back): nothing to build
+        if (this.stage.shown(u.el)) this.complete(u, true);
+        else this.waiting.push(u);
+      }
+      try {
+        this.findRepeats(fresh);
+      } catch (err) {
+        console.error("[swarmline] repeats", err);
+      }
+      this.waiting.sort((a, b) => (a.fixed !== b.fixed ? (a.fixed ? -1 : 1) : a.y - b.y || a.id - b.id));
+    }
+
+    // ---------------------------------------------------------------- repeats
+    // Cards in a grid, rows in a list, items in a menu: build the first one, then
+    // duplicate it into the next slot and edit only what differs.
+    findRepeats(list) {
+      if (!this.groups) {
+        this.groups = new Map(); // parent element -> Map(signature -> group)
+        this.roleOf = new WeakMap(); // component element -> "master" | job
+        this.dupCount = 0;
+      }
+      const v = this.env.view();
+      const top = this.env.top;
+      const unitsIn = new Map();
+      for (const u of list) {
+        if (u.state !== 0 || u.fixed) continue;
+        let e = u.el;
+        for (let d = 0; e && e !== document.body && d < 9; d++, e = e.parentElement) {
+          let a = unitsIn.get(e);
+          if (!a) unitsIn.set(e, (a = []));
+          a.push(u);
+        }
+      }
+      const depth = (e) => {
+        let d = 0;
+        for (; e; e = e.parentElement) d++;
+        return d;
+      };
+      const parents = [...new Set([...unitsIn.keys()].map((e) => e.parentElement).filter(Boolean))].sort((a, b) => depth(a) - depth(b));
+      const ratio = (a, b) => Math.max(a, b) / Math.max(1, Math.min(a, b));
+      const insideCopy = (e) => {
+        for (let p = e; p; p = p.parentElement) {
+          const r = this.roleOf.get(p);
+          if (r && r !== "master") return true;
+        }
+        return false;
+      };
+      for (const P of parents) {
+        if (P === document.body || P === document.documentElement || insideCopy(P)) continue;
+        const buckets = new Map();
+        for (const c of P.children) {
+          const us = unitsIn.get(c);
+          if (!us || us.length < 2 || this.roleOf.has(c)) continue;
+          const r = c.getBoundingClientRect();
+          if (r.width < 24 || r.height < 16 || r.height > v.h * 0.8 || r.width > v.w * 0.96) continue;
+          if (getComputedStyle(c).translate !== "none") continue;
+          const counts = {};
+          for (const u of us) counts[u.kind] = (counts[u.kind] || 0) + 1;
+          const sig = c.localName + "|" + (c.getAttribute("class") || "") + "|" + Object.keys(counts).sort().map((k) => k + counts[k]).join("");
+          if (!buckets.has(sig)) buckets.set(sig, []);
+          buckets.get(sig).push({ c, r, us });
+        }
+        let known = this.groups.get(P);
+        if (!known) this.groups.set(P, (known = new Map()));
+        for (const [sig, found] of buckets) {
+          found.sort((a, b) => a.r.top - b.r.top || a.r.left - b.r.left);
+          let g = known.get(sig);
+          let rest = found;
+          if (!g) {
+            if (found.length < 2) continue;
+            const m = found[0];
+            g = { master: m.c, masterUnits: m.us, mw: m.r.width, mh: m.r.height, copies: [] };
+            known.set(sig, g);
+            this.roleOf.set(m.c, "master");
+            rest = found.slice(1);
+          }
+          for (const k of rest) {
+            if (ratio(k.r.width, g.mw) > 1.35 || ratio(k.r.height, g.mh) > 1.35) continue;
+            if (k.us.some((u) => u.state !== 0)) continue;
+            this.makeDup(g, k, v, top);
+          }
+        }
+      }
+    }
+
+    makeDup(g, k, v, top) {
+      const job = {
+        id: -(++this.dupCount), kind: "dup", el: k.c, group: g, parent: null, fixed: false,
+        state: 0, phase: 0, p: 0, typed: 0, step: 0, st: 0, done: false,
+        y: k.r.top - v.y + top, w: k.r.width, h: k.r.height, top0: k.r.top, left0: k.r.left,
+        rad: [0, 0, 0, 0], label: "", lead: null, units: k.us,
+      };
+      this.roleOf.set(k.c, job);
+      // what the copy shares with the original comes along with it; what differs is edited after
+      const pathTo = (root, el) => {
+        const p = [];
+        for (let e = el; e && e !== root; e = e.parentElement) p.unshift([...e.parentElement.children].indexOf(e));
+        return p;
+      };
+      const follow = (root, p) => {
+        let e = root;
+        for (const i of p) e = e && e.children[i];
+        return e || null;
+      };
+      let same = 0;
+      for (const u of k.us) {
+        u.inCopy = job;
+        const twin = follow(g.master, pathTo(k.c, u.el));
+        let alike = !!twin && twin.localName === u.el.localName;
+        if (alike && u.kind === "text") alike = twin.textContent.trim() === u.el.textContent.trim();
+        else if (alike && u.kind === "media" && u.el.localName === "img") alike = (twin.currentSrc || twin.src) === (u.el.currentSrc || u.el.src);
+        else if (alike && u.kind === "media" && u.el.localName === "svg") alike = twin.innerHTML.length === u.el.innerHTML.length;
+        u.dupSame = alike;
+        if (alike) same++;
+      }
+      // nothing in common to carry over: the copy simply arrives with its own content
+      if (!same) for (const u of k.us) u.dupSame = true;
+      g.copies.push(job);
+      this.waiting.push(job);
+    }
+
+    // the duplicate can start once something to copy from is finished and on screen
+    dupSource(job) {
+      const g = job.group;
+      const ready = [];
+      if (g.masterUnits.every((u) => u.state === 2)) ready.push(g.master);
+      for (const c of g.copies) if (c.done && c.state === 2 && c.units.every((x) => x.state === 2)) ready.push(c.el);
+      if (!ready.length) return undefined; // not yet
+      const D = job.el.getBoundingClientRect();
+      let best = null;
+      let bd = Infinity;
+      for (const e of ready) {
+        const r = e.getBoundingClientRect();
+        if (r.bottom < 0 || r.top > innerHeight || r.right < 0 || r.left > innerWidth) continue;
+        const d = Math.hypot(r.left - D.left, r.top - D.top);
+        if (d < bd) {
+          bd = d;
+          best = e;
+        }
+      }
+      return best; // null: nothing visible to copy from
+    }
+
+    shiftEl(el, x, y) {
+      if (!this.shifted) this.shifted = new Map();
+      if (!this.shifted.has(el)) this.shifted.set(el, [el.style.getPropertyValue("translate"), el.style.getPropertyPriority("translate")]);
+      el.style.setProperty("translate", `${x.toFixed(1)}px ${y.toFixed(1)}px`, "important");
+    }
+
+    unshift(el) {
+      const prev = this.shifted && this.shifted.get(el);
+      if (!prev) return;
+      if (prev[0]) el.style.setProperty("translate", prev[0], prev[1]);
+      else el.style.removeProperty("translate");
+      this.shifted.delete(el);
+    }
+
+    unshiftAll() {
+      if (this.shifted) for (const el of [...this.shifted.keys()]) this.unshift(el);
+      if (this.ghosts) for (const gh of [...this.ghosts]) this.dropGhost(gh);
+    }
+
+    // the duplicate, step by step: click the original, hold Alt, drag the copy out, let go
+    stepDup(u, T, dt) {
+      const n = u.lead;
+      if (u.step === 0) {
+        if (this.arrived(u, "grab", dt)) {
+          this.press(u);
+          u.step = 1;
+          u.st = 0;
+        }
+        return;
+      }
+      u.st += T;
+      if (u.step === 1 && u.st >= 0.07) {
+        u.step = 15;
+        u.st = 0;
+        u.hold = rand(0.15, 0.3);
+      } else if (u.step === 15 && u.st >= u.hold) {
+        u.step = 2; // Alt down: the pointer shows it will copy
+        u.st = 0;
+      } else if (u.step === 2 && u.st >= 0.12) {
+        const S = u.src.getBoundingClientRect();
+        if (n) n.press = 1;
+        // the copy looks exactly like the original while it's carried; the real element
+        // takes its place on release and anything that differs is then typed in
+        u.ghost = this.makeGhost(u.src, S);
+        if (!u.ghost) for (const x of u.units) if (x.dupSame) this.reveal(x);
+        u.step = 3;
+        u.st = 0;
+      } else if (u.step === 3) {
+        if (this.arrived(u, "carry", dt)) {
+          if (u.ghost) this.dropGhost(u.ghost);
+          u.ghost = null;
+          for (const x of u.units) if (x.dupSame) this.complete(x, true);
+          u.done = true; // now the differences can be edited in
+          this.sound(u, "dup");
+          u.step = 4;
+          u.st = 0;
+        }
+      } else if (u.step === 4 && u.st >= 0.1) {
+        u.step = 5;
+        u.st = 0;
+      } else if (u.step === 5 && u.st >= 0.35) {
+        u.state = 2;
+        this.release(u);
+      }
+    }
+
+    abortDup(u) {
+      if (u.ghost) this.dropGhost(u.ghost);
+      u.ghost = null;
+      for (const x of u.units) if (x.dupSame) this.complete(x, true);
+      u.done = true;
+      u.state = 2;
+      this.release(u);
+    }
+
+    // the copy rides under the pointer (called after the pointers move, so it never lags)
+    dragCopy(u) {
+      const n = u.lead;
+      if (!u.ghost || !n || n.unit !== u) return;
+      this.moveGhost(u.ghost, n.x - u.grab[0], n.y - u.grab[1]);
+    }
+
+    // a look-alike of an element, as it looks right now, laid over the page
+    makeGhost(src, S) {
+      try {
+        const el = src.cloneNode(true);
+        el.setAttribute(GHOST, "");
+        el.setAttribute(SHOWN, "");
+        el.setAttribute("aria-hidden", "true");
+        el.removeAttribute("id");
+        for (const k of el.querySelectorAll("[id],[name],[autofocus]")) {
+          k.removeAttribute("id");
+          k.removeAttribute("name");
+          k.removeAttribute("autofocus");
+        }
+        for (const v of el.querySelectorAll("video,audio")) {
+          v.removeAttribute("autoplay");
+          v.muted = true;
+        }
+        const set = (p, val) => el.style.setProperty(p, val, "important");
+        set("position", "fixed");
+        set("left", "0px");
+        set("top", "0px");
+        set("margin", "0");
+        set("width", S.width + "px");
+        set("height", S.height + "px");
+        set("box-sizing", "border-box");
+        set("translate", "none");
+        set("transform", "none");
+        set("transition", "none");
+        set("animation", "none");
+        set("pointer-events", "none");
+        set("z-index", "2147483000");
+        set("box-shadow", "0 12px 32px rgba(15,23,42,.18)");
+        src.parentNode.insertBefore(el, src.nextSibling);
+        // a transformed ancestor can move "fixed": measure and correct for it
+        const r = el.getBoundingClientRect();
+        const gh = { el, ox: -r.left, oy: -r.top };
+        this.moveGhost(gh, S.left, S.top);
+        (this.ghosts || (this.ghosts = new Set())).add(gh);
+        return gh;
+      } catch (_) {
+        return null;
+      }
+    }
+
+    moveGhost(gh, x, y) {
+      gh.el.style.setProperty("left", (x + gh.ox).toFixed(1) + "px", "important");
+      gh.el.style.setProperty("top", (y + gh.oy).toFixed(1) + "px", "important");
+    }
+
+    dropGhost(gh) {
+      gh.el.remove();
+      if (this.ghosts) this.ghosts.delete(gh);
+    }
+
+    // show a unit's element(s) as they are (a copy carries them along)
+    reveal(x) {
+      const st = this.stage;
+      st.show(x.el);
+      if (x.kind === "text") for (const f of x.flow) st.show(f);
+      else if (x.kind === "media" || x.kind === "control") for (const k of x.el.querySelectorAll("*")) st.show(k);
+    }
+
+    complete(u, silent) {
+      if (u.state === 2) return;
+      if (u.scaleWas) this.unscaleText(u);
+      this.release(u);
+      u.state = 2;
+      u.p = 1;
+      this.done++;
+      const st = this.stage;
+      if (u.kind === "text") {
+        st.show(u.el);
+        for (const f of u.flow) st.show(f);
+        st.unclip(u.el);
+      } else if (u.kind === "media" || u.kind === "control") {
+        st.show(u.el);
+        for (const k of u.el.querySelectorAll("*")) st.show(k);
+      } else st.show(u.el);
+      if (!silent && this.focus === u) this.focus = null;
+    }
+
+    liveRect(u) {
+      const el = u.el;
+      if (!el.isConnected) return null;
+      const r = el.getBoundingClientRect();
+      if (r.width < 1 || r.height < 1) return null;
+      return { x: r.left, y: r.top, w: r.width, h: r.height };
+    }
+
+    inView(u, v, top, pad = 0) {
+      if (u.fixed) return true;
+      const y = u.y - top + v.y;
+      return y + u.h > v.y - pad && y < v.y + v.h + pad;
+    }
+
+    // a unit can start once the box it sits in has been drawn
+    parentReady(u) {
+      const p = u.parent;
+      if (!p) return true;
+      return p.state === 2 || (p.kind === "box" && p.state === 1 && p.phase >= 1);
+    }
+
+    // ---------------------------------------------------------------- frame
+
     frame(now) {
       if (this.dead) return;
-      const dt = Math.min(0.05, (now - this.last) / 1000);
+      const dt = clamp((now - this.last) / 1000, 0, 0.05); // the first frame can be stamped before we started
       this.last = now;
       try {
-        this.engine.step(dt);
-        if (this.tour) this.tourStep(dt);
-        this.view.render(this.engine);
-        if (!this._hudT || now - this._hudT > 200) {
+        this.update(dt);
+        this.draw();
+        if (!this._hudT || now - this._hudT > 180) {
           this._hudT = now;
           this.updateHud();
           this.renderSoundBtn();
         }
       } catch (err) {
         console.error("[swarmline]", err);
+        stop(true); // never leave a page hidden
+        return;
       }
-      this.raf = requestAnimationFrame((t) => this.frame(t));
+      if (!this.dead) this.raf = requestAnimationFrame((t) => this.frame(t));
     }
 
-    // Tour works screen by screen: finish what's on screen, glide quickly to the next
-    // section so it sits in the middle of the viewport, and only then let the swarm start on it.
-    tourStep(dt) {
-      const E = this.engine;
-      if (!E.started || E.flocking) return this.endJump();
-      const g = this.env.geom();
-      const J = this.tourJump;
-      if (J) {
+    update(dt) {
+      this.time += dt;
+      this.dt = dt;
+      const env = this.env;
+      const v = env.view();
+      const top = env.top;
+      const sdt = dt * this.speed;
+      const st = this.stage;
+
+      const moved = this.lastTop == null ? 0 : Math.abs(top - this.lastTop);
+      this.lastTop = top;
+      const inst = this.jump ? 0 : moved / Math.max(dt, 0.001);
+      this.speedPx += (inst - this.speedPx) * (1 - Math.exp(-dt / 0.12));
+      const resting = !this.jump && this.speedPx < 45;
+      this.restFor = resting ? this.restFor + dt : 0;
+
+      // intro: the page fades into a blank canvas of its own colour
+      if (this.intro < 1) {
+        this.intro = Math.min(1, this.intro + dt / 0.75);
+        if (this.intro >= 0.45 && !this.hidden) {
+          this.hidden = true;
+          st.hide();
+        }
+        if (this.intro > 0.3) this.hud.classList.add("on");
+        if (this.intro < 1) return;
+        if (this.sfx) this.sfx.start();
+      }
+
+      if (this.outro) {
+        this.outro.t = Math.min(1, this.outro.t + dt / 1.1);
+        if (this.outro.t >= 1 && !this.outro.off) {
+          this.outro.off = true;
+          this.cv.classList.add("off");
+        }
+        return;
+      }
+
+      if (this.jump) {
+        const J = this.jump;
         J.t += dt;
         const k = Math.min(1, J.t / J.dur);
-        this.env.scrollTo(Math.round(J.from + (J.to - J.from) * easeInOutSine(k)));
-        if (k >= 1) this.endJump();
-        return;
+        env.scrollTo(Math.round(J.from + (J.to - J.from) * easeSine(k)));
+        if (k >= 1) this.jump = null;
       }
-      const crew = Math.max(MIN_AGENTS, E.cursors.filter((c) => !c.leaving).length);
-      // wait for the screen to be (nearly) built, and for any smooth-scroll library
-      // (Lenis, Locomotive...) still easing the page from a wheel flick to come to rest
-      if (E.backlog() > Math.max(2, Math.round(crew * 0.25)) || E.scrollSpeed > 30) {
-        this.tourDwell = 0;
-        return;
-      }
-      // a short beat to take in the finished screen before moving on
-      this.tourDwell += dt * E.speed;
-      if (this.tourDwell < 0.35) return;
-      const next = E.nextSection(g.vh * 0.7);
-      if (!next) return;
-      const maxY = Math.max(0, this.env.scrollHeight() - g.vh);
-      // centre the next band, but keep its first line well clear of the top edge
-      const bottom = Math.min(next.top + g.vh * 0.7, next.bot + g.vh * 0.15);
-      const to = clamp(Math.min((next.top + bottom) / 2 - g.vh / 2, next.top - g.vh * 0.12), 0, maxY);
-      const dist = to - g.sy;
-      if (dist < 2) {
-        // content past the end of the scroll range: nothing to scroll to, just unlock it
-        E.frontier = Math.max(E.frontier, next.top + g.vh);
-        return;
-      }
-      this.tourDwell = 0;
-      E.hold = true;
-      this.tourJump = { from: g.sy, to, t: 0, dur: clamp(0.35 + dist / 2600, 0.45, 1.1) / Math.sqrt(E.speed) };
-    }
 
-    endJump() {
-      this.tourJump = null;
-      if (this.engine) this.engine.hold = false;
-    }
-
-    updateHud() {
-      const E = this.engine;
-      const v = this.view;
-      if (!E.ready) return;
-      const workers = E.cursors.filter((c) => c.worked).length + E.retired;
-      const total = E.tasks.length;
-      const done = E.doneCount;
-      if (this.complete) return;
-      if (!E.started) v.status.innerHTML = `<b>${E.cursors.length}</b> cursors ready<span class="sep"></span>${total.toLocaleString()} pieces to build`;
-      else {
-        const pend = E.tasks.length - done;
-        const below = E.hasBelow();
-        v.status.innerHTML =
-          `<b>${workers}</b> cursors<span class="sep"></span><b>${done.toLocaleString()}</b> / ${total.toLocaleString()} built` +
-          (below && pend && !this.tour && E.backlog() === 0 ? `<span class="sep"></span>scroll to keep building` : "");
+      if (this.restFor > 0.12 && (this.scanTop !== Math.round(top) || this.scanH !== env.height)) {
+        this.scanTop = Math.round(top);
+        this.scanH = env.height;
+        const band = { top: top - v.h * 0.1, bottom: top + v.h * 1.1 };
+        this.register(this.scanner.scan(band));
+        this.scanned = this.addBand(this.scanned, band.top, band.bottom);
+        this.frontier = Math.max(this.frontier, top + v.h);
       }
-      v.barFill.style.width = total ? `${(done / total) * 100}%` : "0%";
-      v.barFill.parentNode.setAttribute("aria-valuenow", String(total ? Math.round((done / total) * 100) : 0));
-      const busy = E.cursors.filter((c) => c.task).slice(-5);
-      const key = busy.map((c) => c.id).join(",");
-      if (key !== this._dots) {
-        this._dots = key;
-        v.dots.innerHTML = busy.map((c) => `<i style="background:${c.color}" title="${c.name}">${c.name[0]}</i>`).join("");
-      }
-    }
 
-    onComplete() {
-      this.complete = true;
-      if (this.sfx) this.sfx.finale();
-      const E = this.engine;
-      const v = this.view;
-      const workers = E.cursors.filter((c) => c.worked).length + E.retired;
-      const secs = (E.endTime - E.startTime).toFixed(1);
-      v.status.innerHTML = `Built by <b>${workers}</b> cursors in <b>${secs} s</b>`;
-      v.barFill.style.width = "100%";
-      v.dots.innerHTML = "";
-      v.root.querySelector('[data-a="live"]').hidden = false;
-      v.root.querySelector('[data-a="replay"]').hidden = false;
-      v.root.querySelector('[data-a="tour"]').hidden = true;
-      v.root.querySelector('[data-a="speed"]').hidden = true;
-      this.tour = false;
-      this.endJump();
-    }
-
-    destroy(reveal) {
-      unhidePage();
-      if (this.settled) settlePage("restore");
-      if (this.sfx) {
-        if (reveal) this.sfx.release();
-        this.sfx.close(reveal ? 1.4 : 0.25);
+      // start work in reading order, a crew at a time
+      // how much is waiting on screen (drives the tempo and how many hands come in)
+      let avail = 0;
+      for (const w of this.waiting) {
+        if (w.state !== 0 || w.fixed) continue;
+        const y = w.y - top + v.y;
+        if (y > v.y + v.h) break;
+        if (y + w.h > v.y) avail++;
       }
-      const finish = () => {
-        this.dead = true;
-        cancelAnimationFrame(this.raf);
-        for (const u of this.unbinds || []) u();
-        if (this.view) this.view.host.remove();
-      };
-      // failed while starting up: just clean up
-      if (!this.view || !this.engine) return finish();
-      if (reveal) {
-        this.engine.releasing = true;
-        this.engine.flocking = true;
-        for (const c of this.engine.cursors) {
-          c.gen = null;
-          c.follow = false;
+      this.avail = avail;
+      const slots = Math.min(this.nibs.length, 8 + Math.floor(avail / 2) + Math.floor(this.speedPx / 40));
+      let busy = 0;
+      for (const u of this.active) if (!(u.kind === "box" && u.phase >= 1)) busy++;
+      this.idleT = this.active.length ? 0 : (this.idleT || 0) + dt;
+      if (resting && this.waiting.length) {
+        const keep = [];
+        for (const u of this.waiting) {
+          if (u.state !== 0) continue;
+          if (u.kind !== "dup" && st.shown(u.el)) {
+            this.complete(u, true);
+            continue;
+          }
+          let go = busy < slots && (u.fixed || u.y <= this.frontier) && this.parentReady(u) && (!u.inCopy || u.inCopy.done);
+          // one copy at a time per group: each is duplicated from the nearest finished one
+          if (go && u.kind === "dup" && u.group.copies.some((c) => c !== u && c.state === 1)) go = false;
+          if (go && u.kind === "dup") {
+            const src = this.dupSource(u);
+            // the original can't finish yet (part of it is still off screen) and nothing else
+            // is happening: don't wait for it, build this copy by hand
+            const stuck = src === undefined && this.idleT > 0.4;
+            if (src === undefined && !stuck) go = false;
+            else if (stuck || src === null || !this.inView(u, v, top, 0)) {
+              // nothing on screen to copy from: build this one by hand instead
+              u.done = true;
+              u.state = 2;
+              for (const x of u.units) x.dupSame = false;
+              continue;
+            } else u.src = src;
+          }
+          if (!go) {
+            keep.push(u);
+            continue;
+          }
+          if (!this.inView(u, v, top, 40)) {
+            this.complete(u, true); // scrolled past without being seen: it simply appears
+            continue;
+          }
+          u.state = 1;
+          u.phase = 0;
+          u.p = 0;
+          u.step = 0;
+          u.st = 0;
+          u.line = this.isLine(u);
+          if (u.line) {
+            u.bend = rand(-0.03, 0.03);
+            u.off = [rand(14, 30), rand(10, 24)];
+          }
+          if (u.kind === "text") {
+            u.edit = !!u.inCopy && !u.dupSame;
+            u.jx = rand(-5, 5);
+            u.grow = !u.edit && u.mode !== "fade" && u.fs >= 28 && u.h < 400;
+          }
+          if (u.kind === "dup") {
+            const S = u.src.getBoundingClientRect();
+            u.grab = [Math.min(S.width * 0.45, 70) + rand(-8, 8), Math.min(S.height * 0.45, 30) + rand(-4, 4)];
+          }
+          this.crew(u);
+          this.active.push(u);
+          if (u.kind !== "text" || u.fs >= 26) this.focus = u;
+          busy++;
         }
-        this.view.hud.classList.remove("on");
-        setTimeout(() => {
-          this.view.host.style.setProperty("opacity", "0", "important");
-        }, 450);
-        setTimeout(finish, 1150);
+        this.waiting = keep;
+      }
+
+      // each piece is made by its cursor, step by step, at the swarm's tempo
+      const T = dt * this.tempo;
+      for (const u of this.active) {
+        if (u.state !== 1) continue;
+        if (!this.inView(u, v, top, 80)) {
+          // scrolled away mid-job: it simply appears
+          if ((u.offT = (u.offT || 0) + dt) > 0.6) {
+            if (u.kind === "dup") this.abortDup(u);
+            else this.complete(u, true);
+          }
+          continue;
+        }
+        u.offT = 0;
+        if (u.kind === "dup") this.stepDup(u, T, dt);
+        else if (u.line) this.stepLine(u, T, dt);
+        else if (u.kind === "text") this.stepText(u, T, dt);
+        else if (u.kind === "glyph") this.stepGlyph(u, T, dt);
+        else this.stepShape(u, T, dt);
+      }
+      if (this.active.some((u) => u.state === 2)) this.active = this.active.filter((u) => u.state !== 2);
+
+      // end of a screen: everything still hidden there (backgrounds of plain wrappers,
+      // decoration) comes in top to bottom behind a soft light line
+      if (this.sweep) {
+        const s = this.sweep;
+        s.p = Math.min(1, s.p + sdt / s.dur);
+        const edge = s.vTop + (s.vBottom - s.vTop) * easeInOut(s.p) + 60;
+        while (s.i < s.items.length && s.items[s.i].y <= edge) {
+          const it = s.items[s.i++];
+          if (st.shown(it.el)) continue;
+          if (it.el.querySelector(`[${SHOWN}]`)) st.show(it.el); // has built content inside: no fade
+          else st.fadeIn(it.el, 300);
+        }
+        if (s.p >= 1) {
+          for (; s.i < s.items.length; s.i++) st.show(s.items[s.i].el);
+          this.bands = this.addBand(this.bands, s.top, s.bottom);
+          this.sweep = null;
+        }
+      } else if (resting && this.restFor > 0.08) {
+        const vt = top;
+        const vb = Math.min(env.height, top + v.h);
+        const gap = this.gapIn(vt, vb);
+        if (gap && this.scannedCovers(vt, vb)) {
+          const pending = this.waiting.some((u) => !u.fixed && u.y < gap.bottom && u.y + u.h > gap.top && u.y >= vt - 2) ||
+            this.active.some((u) => !(u.kind === "box" && u.phase >= 1));
+          if (!pending) {
+            const sTop = gap.top - top + v.y;
+            const sBottom = gap.bottom - top + v.y;
+            const items = this.scanner.leftovers(Math.max(0, sTop - 2), sBottom + 2);
+            this.sweep = { top: gap.top, bottom: gap.bottom, vTop: sTop, vBottom: sBottom, p: 0, i: 0, items, dur: items.length ? 0.6 : 0.2 };
+          }
+        }
+      }
+
+      // tour: next screen, or the end
+      const viewDone = !this.sweep && !this.gapIn(top, Math.min(env.height, top + v.h));
+      if (viewDone && !this.jump) {
+        const atEnd = top >= env.maxTop() - 1;
+        if (atEnd && this.covered(0, env.height)) {
+          this.dwell += dt;
+          if (this.dwell > 0.5) this.finish();
+        } else if (this.tour && resting) {
+          // a finished screen hands straight over to the next one
+          this.dwell += dt * this.speed;
+          if (this.dwell > 0.12) {
+            this.dwell = 0;
+            const gap = atEnd ? this.gapIn(0, env.height) : null;
+            const to = gap ? clamp(gap.top, 0, env.maxTop()) : Math.min(env.maxTop(), top + v.h * 0.82);
+            if (reduced()) env.scrollTo(to);
+            else this.jump = { from: top, to, t: 0, dur: clamp(0.4 + (to - top) / 2600, 0.5, 1.1) / Math.sqrt(this.speed) };
+          }
+        } else this.dwell = 0;
+      } else this.dwell = 0;
+    }
+
+    // ---- how each kind of piece is made (steps run at the swarm's tempo)
+
+    sound(u, kind) {
+      const R = this.liveRect(u);
+      if (this.sfx && R) this.sfx.place(kind, R.x + R.w / 2, R.y + R.h / 2, R.w, R.h, this.W, this.H, u.fs || 16);
+    }
+
+    // boxes, image frames and form fields: crosshair to the corner, press, drag, let go, fill
+    stepShape(u, T, dt) {
+      const st = this.stage;
+      if (u.step === 0) {
+        if (this.arrived(u, "to", dt)) {
+          this.press(u);
+          u.step = 2;
+          u.st = 0;
+        }
+      } else if (u.step === 2) {
+        if (this.arrived(u, "drag", dt)) {
+          const R = this.liveRect(u);
+          const n = u.lead;
+          if (R && n && n.unit === u && u.endRel && (u.endRel[0] < R.w - 0.5 || u.endRel[1] < R.h - 0.5)) {
+            // a box bigger than the screen: the rest of it stretches out after the drag
+            u.dw0 = clamp(n.x - R.x, 0, R.w);
+            u.dh0 = clamp(n.y - R.y, 0, R.h);
+            u.step = 25;
+            u.ext = 0;
+          } else {
+            u.step = 3;
+            u.hold = rand(0.18, 0.3);
+          }
+          u.st = 0;
+        }
+      } else if (u.step === 25) {
+        u.ext = Math.min(1, (u.ext || 0) + T / 0.5);
+        if (u.ext >= 1) {
+          u.step = 3;
+          u.st = 0;
+          u.hold = rand(0.18, 0.3);
+        }
+      } else if (u.step === 3) {
+        u.st += T;
+        if (u.st >= u.hold) {
+          u.phase = 1;
+          if (u.kind === "box") st.fadeIn(u.el, 260);
+          else {
+            st.show(u.el);
+            for (const k of u.el.querySelectorAll("*")) st.show(k);
+            this.scanIn(u);
+          }
+          this.sound(u, u.kind === "box" ? "rect" : "image");
+          u.step = 4;
+          u.st = 0;
+        }
       } else {
-        this.view.host.style.setProperty("transition", "opacity .25s ease", "important");
-        this.view.host.style.setProperty("opacity", "0", "important");
-        this.dead = true;
-        cancelAnimationFrame(this.raf);
-        for (const u of this.unbinds || []) u();
-        setTimeout(() => this.view.host.remove(), 260);
+        u.st += T;
+        if (u.st >= (u.kind === "box" ? 0.35 : 0.5)) this.complete(u);
       }
     }
-  }
 
-  // background.js may have hidden everything but media for its screenshot;
-  // put the page back once our canvas covers it (or if we bail out early).
-  async function unhidePage() {
-    if (!window.__swarmHidden) return;
-    window.__swarmHidden = false;
-    try {
-      if (typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.sendMessage) await chrome.runtime.sendMessage({ type: "swarm:unhide" });
-    } catch (_) {}
-    if (typeof window.__swarmUnhide === "function") {
+    // text: click (or drag a text box), then type beside a parked I-beam; big headings grow
+    stepText(u, T, dt) {
+      const st = this.stage;
+      const n = u.lead;
+      if (u.step === 0) {
+        if (!this.arrived(u, "to", dt)) return;
+        this.press(u);
+        u.st = 0;
+        if (u.edit) u.step = 10;
+        else {
+          const R = this.liveRect(u);
+          const tb = R && this.textBox(u, R);
+          u.step = !tb || (tb.w < 140 && tb.h < tb.lh * 1.6) ? 1 : 2;
+        }
+        return;
+      }
+      if (u.step === 10) {
+        // editing a copy: a double-click selects the words
+        u.st += T;
+        if (u.st >= 0.08) {
+          this.press(u);
+          u.step = 11;
+          u.st = 0;
+          u.hold = rand(0.2, 0.35);
+        }
+        return;
+      }
+      if (u.step === 11 || u.step === 1) {
+        u.st += T;
+        if (u.st >= (u.step === 1 ? 0.07 : u.hold)) this.beginTyping(u);
+        return;
+      }
+      if (u.step === 2) {
+        if (this.arrived(u, "ghost", dt)) this.beginTyping(u);
+        return;
+      }
+      if (u.step === 3) {
+        // an uneven human rhythm, quicker on long passages
+        const N = u.total;
+        const k = clamp(70 / Math.max(1, N), 0.06, 1);
+        u.budget = (u.budget || 0) + T;
+        let i = Math.floor(u.typed);
+        const i0 = i;
+        while (i < N && u.budget > 0) {
+          let d = rand(0.012, 0.04);
+          if (Math.random() < 0.16) d += rand(0, 0.03);
+          if (u.lineEnds.has(i + 1)) d += 0.1;
+          if (Math.random() < 0.025) d += rand(0.08, 0.2);
+          u.budget -= d * k;
+          i++;
+        }
+        u.typed = i;
+        if (i > i0 && this.sfx && n) this.sfx.key(n.x, this.W, n.id, i - i0, 0);
+        if (u.mode !== "fade") st.clip(u.el, this.typedPath(u, i));
+        if (i >= N) {
+          u.step = 4;
+          u.st = 0;
+        }
+        return;
+      }
+      if (u.step === 4) {
+        u.st += T;
+        if (u.st >= 0.12) {
+          this.sound(u, u.edit ? "edit" : "text");
+          u.step = u.grow ? 5 : 6;
+          u.st = 0;
+          u.gi = 0;
+        }
+        return;
+      }
+      if (u.step === 5) {
+        u.st += T;
+        if (u.st >= 0.06) {
+          u.st = 0;
+          this.scaleText(u, u.gsteps[u.gi] / u.fs);
+          u.gi++;
+          if (this.sfx && n) this.sfx.grow(u.gi, n.x, this.W);
+          if (u.gi >= u.gsteps.length) {
+            u.step = 6;
+            u.st = -0.15;
+          }
+        }
+        return;
+      }
+      u.st += T;
+      if (u.st >= (u.edit ? 0.3 : 0.2)) this.complete(u);
+    }
+
+    beginTyping(u) {
+      const st = this.stage;
+      const n = u.lead;
+      u.phase = 1;
+      u.step = 3;
+      u.budget = 0;
+      if (u.grow) {
+        u.gsteps = [24, 32, 40, 48, 56, 64, 72, 88, 104].filter((x) => x < u.fs && x > 18).concat([u.fs]);
+        this.scaleText(u, Math.min(1, 18 / u.fs));
+      }
+      st.show(u.el);
+      for (const f of u.flow) st.show(f);
+      if (u.mode === "fade") this.colorIn(u);
+      else st.clip(u.el, this.typedPath(u, 0));
+      u.lineEnds = new Set();
+      let c = 0;
+      for (const L of u.lines) {
+        c += L.edges.length;
+        u.lineEnds.add(c);
+      }
+      const R = this.liveRect(u);
+      if (R && n && n.unit === u) {
+        const tb = this.textBox(u, R);
+        u.park = u.edit ? [n.x - tb.x, n.y - tb.y] : [n.x - tb.x + rand(-30, 10), n.y - tb.y + rand(10, 30)];
+      } else u.park = [0, 0];
+    }
+
+    scaleText(u, s) {
+      const el = u.el;
+      if (!u.scaleWas) u.scaleWas = [el.style.getPropertyValue("scale"), el.style.getPropertyPriority("scale"), el.style.getPropertyValue("transform-origin"), el.style.getPropertyPriority("transform-origin")];
+      if (s >= 0.999) {
+        this.unscaleText(u);
+        return;
+      }
+      u.curScale = s;
+      el.style.setProperty("transform-origin", "0 0", "important");
+      el.style.setProperty("scale", String(s), "important");
+    }
+
+    unscaleText(u) {
+      const w = u.scaleWas;
+      u.curScale = 1;
+      if (!w) return;
+      const el = u.el;
+      if (w[0]) el.style.setProperty("scale", w[0], w[1]);
+      else el.style.removeProperty("scale");
+      if (w[2]) el.style.setProperty("transform-origin", w[2], w[3]);
+      else el.style.removeProperty("transform-origin");
+      u.scaleWas = null;
+    }
+
+    // icons: a click, and it's there
+    stepGlyph(u, T, dt) {
+      if (u.step === 0) {
+        if (this.arrived(u, "to", dt)) {
+          this.press(u);
+          u.step = 1;
+          u.st = 0;
+        }
+      } else if (u.step === 1) {
+        u.st += T;
+        if (u.st >= 0.07) {
+          u.phase = 1;
+          this.stage.fadeIn(u.el, 200);
+          u.step = 2;
+          u.st = 0;
+        }
+      } else {
+        u.st += T;
+        if (u.st >= 0.2) this.complete(u);
+      }
+    }
+
+    // dividers and rules: the pen tool, one click at each end
+    stepLine(u, T, dt) {
+      if (u.step === 0) {
+        if (this.arrived(u, "to", dt)) {
+          this.press(u);
+          u.placed = 1;
+          u.step = 1;
+          u.st = 0;
+        }
+      } else if (u.step === 1) {
+        u.st += T;
+        if (u.st >= 0.07) u.step = 2;
+      } else if (u.step === 2) {
+        if (this.arrived(u, "to-end", dt)) {
+          this.press(u);
+          u.placed = 2;
+          u.step = 3;
+          u.st = 0;
+          u.hold = 0.07 + rand(0.04, 0.12);
+        }
+      } else if (u.step === 3) {
+        u.st += T;
+        if (u.st >= u.hold) u.step = 4;
+      } else if (u.step === 4) {
+        if (this.arrived(u, "away", dt)) {
+          u.step = 5;
+          u.st = 0;
+        }
+      } else {
+        u.st += T;
+        if (u.st >= 0.3) {
+          u.phase = 1;
+          this.stage.fadeIn(u.el, 200);
+          this.sound(u, "line");
+          this.complete(u);
+        }
+      }
+    }
+
+    // the clip that shows a text element's first n letters (element-local px)
+    typedPath(u, n) {
+      let d = "";
+      let left = n;
+      for (let i = 0; i < u.lines.length; i++) {
+        const L = u.lines[i];
+        if (left <= 0) break;
+        const k = Math.min(left, L.edges.length);
+        left -= k;
+        const x0 = Math.min(L.x, 0) - 4;
+        const right = k >= L.edges.length ? L.x + L.w + 6 : L.edges[k - 1] + 0.5;
+        const y0 = L.y - 3;
+        let h = L.h + 6;
+        // tight line-height: stop halfway into the next line, so its letters don't peek through
+        const N = u.lines[i + 1];
+        if (N && N.y < L.y + L.h && N.x < L.x + L.w && N.x + N.w > L.x) h = Math.min(h, (L.y + L.h + N.y) / 2 - y0);
+        d += `M${(x0).toFixed(1)} ${y0.toFixed(1)}H${right.toFixed(1)}V${(y0 + h).toFixed(1)}H${x0.toFixed(1)}Z`;
+      }
+      for (const k of u.keep || []) d += `M${k.x.toFixed(1)} ${k.y.toFixed(1)}H${(k.x + k.w).toFixed(1)}V${(k.y + k.h).toFixed(1)}H${k.x.toFixed(1)}Z`;
+      return d ? `path('${d}')` : "path('M0 0Z')";
+    }
+
+    // where the caret sits after n letters (element-local px)
+    caretAt(u, n) {
+      let left = Math.floor(n);
+      for (const L of u.lines) {
+        if (left <= L.edges.length) return { x: left ? L.edges[left - 1] : L.x, y: L.y, h: L.h };
+        left -= L.edges.length;
+      }
+      const L = u.lines[u.lines.length - 1];
+      return { x: L.x + L.w, y: L.y, h: L.h };
+    }
+
+    colorIn(u) {
       try {
-        window.__swarmUnhide();
+        const c = getComputedStyle(u.el).color;
+        u.el.animate([{ color: "transparent", WebkitTextFillColor: "transparent" }, { color: c, WebkitTextFillColor: c }], { duration: 500 / this.speed, easing: "ease-out" });
       } catch (_) {}
     }
-    await nextFrame();
-  }
 
-  // Ask settle.js (in the page's own JS world) to finish or restore page animations.
-  // From the extension that goes through background.js; when swarm.js itself runs in the
-  // page world (tests, demo harness) settle.js is called directly.
-  async function settlePage(phase) {
-    try {
-      if (typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.id && chrome.runtime.sendMessage) {
-        const r = await Promise.race([chrome.runtime.sendMessage({ type: "swarm:settle", phase }), sleep(1500).then(() => null)]);
-        return r && r.ok ? r.stats || {} : null;
+    scanIn(u) {
+      try {
+        const kf = u.kind === "control"
+          ? [{ clipPath: "inset(0 100% 0 0)" }, { clipPath: "inset(0 0 0 0)" }]
+          : [{ clipPath: "inset(0 0 100% 0)", opacity: 0.6 }, { clipPath: "inset(0 0 0 0)", opacity: 1 }];
+        u.el.animate(kf, { duration: (u.kind === "media" ? 620 : 360) / this.speed, easing: "cubic-bezier(.65,0,.35,1)" });
+      } catch (_) {}
+    }
+
+    finish() {
+      if (this.outro || this.dead) return;
+      this.jump = null;
+      this.outro = { t: 0, at: performance.now() };
+      this.cv.classList.add("off"); // the page is live: clicks go straight through
+      this.unshiftAll();
+      if (this.sfx) this.sfx.finale();
+      this.secs = (this.outro.at - this.startedAt) / 1000;
+      // the rest of the page comes back at once, gently
+      const leftover = [];
+      for (const u of this.units) if (u.state !== 2) this.complete(u, true);
+      this.stage.peek(() => {
+        for (const el of document.body ? document.body.getElementsByTagName("*") : []) if (!this.stage.shown(el) && el !== this.host) leftover.push(el);
+      });
+      this.stage.restore();
+      for (const el of leftover.slice(0, 600)) {
+        try {
+          const r = el.getBoundingClientRect();
+          if (r.bottom > 0 && r.top < innerHeight && !el.firstElementChild) el.animate([{ opacity: 0 }, { opacity: getComputedStyle(el).opacity }], { duration: 450 });
+        } catch (_) {}
       }
-      if (typeof window.__swarmSettle === "function") return window.__swarmSettle(phase) || {};
-    } catch (_) {}
-    return null;
+      this.$('[data-a="tour"]').hidden = true;
+      this.$('[data-a="speed"]').hidden = true;
+      this.$('[data-a="finish"]').hidden = true;
+      this.$('[data-a="replay"]').hidden = false;
+      this.updateHud(true);
+    }
+
+    // ---------------------------------------------------------------- the swarm
+    // How the cursors move and how each piece is made follow the feel of Swarm Rebuild
+    // (Dhvanil Patel, after Joel Califa's Swarm), used with permission: quick hand-like
+    // moves with a slight sideways bend, a tempo that rises with the backlog, crosshair
+    // drags, typing beside a parked I-beam, pen-tool lines, Alt-drag copies, spare cursors
+    // that wander and slip off-screen, and a boids orbit around your pointer at the end.
+
+    makeNibs() {
+      const n = reduced() ? 8 : 32;
+      const first = reduced() ? 8 : 18;
+      for (let i = 0; i < n; i++) {
+        const fast = Math.random() < 0.25;
+        this.nibs.push({
+          id: i, color: CURSOR_COLORS[i % CURSOR_COLORS.length], name: CREW[i % CREW.length],
+          x: i < first ? this.W / 2 + rand(-60, 60) : -80, y: i < first ? this.H / 2 + rand(-40, 40) : this.H / 2,
+          vx: 0, vy: 0, angle: 0, press: 0, shape: "arrow", unit: null, mv: null, wander: null,
+          idleFor: 0, leaving: false, away: i >= first, vis: 0, born: 0.3 + i * 0.012,
+          speed: fast ? rand(1000, 1500) : rand(300, 750),
+          force: fast ? rand(3500, 6000) : rand(700, 1800),
+          spin: fast ? rand(2.2, 3.4) : rand(0.8, 1.8),
+          curl: rand(-1, 1), orbit: rand(70, 170),
+        });
+      }
+      this.tv = { x: 0, y: 0 };
+      this.spawnT = 0;
+      this.tempo = 2.1;
+      this.avail = 0;
+    }
+
+    present() {
+      return this.nibs.filter((n) => !n.away);
+    }
+
+    // bring a cursor in from the nearest side of the screen
+    spawn(n, nearX) {
+      const left = nearX != null ? nearX < this.W / 2 : Math.random() < 0.5;
+      n.away = false;
+      n.leaving = false;
+      n.x = left ? -40 : this.W + 40;
+      n.y = this.H * rand(0.2, 0.8);
+      n.vx = 0;
+      n.vy = 0;
+      n.mv = null;
+      n.wander = null;
+      n.idleFor = 0;
+      n.vis = 1;
+    }
+
+    crew(u) {
+      const r = u.el.getBoundingClientRect();
+      let pool = this.nibs.filter((n) => !n.away && !n.unit);
+      if (!pool.length) {
+        const out = this.nibs.find((n) => n.away);
+        if (out) {
+          this.spawn(out, r.left);
+          pool = [out];
+        }
+      }
+      if (!pool.length) return;
+      const d = (n) => Math.hypot(n.x - r.left, n.y - r.top) + (n.leaving ? 400 : 0);
+      pool.sort((a, b) => d(a) - d(b));
+      const n = pool[0];
+      n.unit = u;
+      n.mv = null;
+      n.wander = null;
+      n.leaving = false;
+      n.idleFor = 0;
+      u.lead = n;
+      u.color = n.color;
+    }
+
+    release(u) {
+      if (!u.lead) return;
+      for (const n of this.nibs) {
+        if (n.unit !== u) continue;
+        n.unit = null;
+        n.mv = null;
+        n.wander = null;
+        n.idleFor = 0;
+        n.shape = "arrow";
+      }
+      u.lead = null;
+    }
+
+    // ---- moves: the curve of a hand moving a pointer
+
+    go(n, key, p, o = {}) {
+      if (n.mv && n.mv.key === key) return;
+      const d = Math.hypot(p[0] - n.x, p[1] - n.y);
+      n.mv = {
+        key, x0: n.x, y0: n.y, t: 0, done: d < 0.5, drag: !!o.drag,
+        dur: clamp(0.12 + Math.sqrt(d) * 0.021, 0.14, 0.9) / (o.speed || 1),
+        bend: (o.bend != null ? o.bend : (Math.random() < 0.5 ? -1 : 1) * rand(0.04, 0.14)) * Math.min(d, 600),
+      };
+    }
+
+    advance(n, p, dt) {
+      const m = n.mv;
+      if (!m) return;
+      if (m.done) {
+        n.x = p[0];
+        n.y = p[1];
+        return;
+      }
+      m.t += dt * this.tempo;
+      const k = Math.min(1, m.t / m.dur);
+      const e = m.drag || k < 0.15 ? easeInOut(k) : easeOut(k);
+      const dx = p[0] - m.x0;
+      const dy = p[1] - m.y0;
+      const L = Math.hypot(dx, dy) || 1;
+      const off = Math.sin(Math.PI * e) * m.bend;
+      n.x = m.x0 + dx * e + (-dy / L) * off;
+      n.y = m.y0 + dy * e + (dx / L) * off;
+      if (k >= 1) {
+        m.done = true;
+        n.x = p[0];
+        n.y = p[1];
+      }
+    }
+
+    // has the unit's cursor finished the given leg? (no cursor: a short pause stands in)
+    arrived(u, key, dt) {
+      const n = u.lead;
+      if (!n || n.unit !== u) return (u.noLead = (u.noLead || 0) + dt) > 0.2;
+      return !!(n.mv && n.mv.key === key && n.mv.done);
+    }
+
+    // a click: the pointer dips
+    press(u) {
+      const n = u.lead;
+      if (!n) return;
+      n.press = 1;
+      if (this.sfx) this.sfx.press(n.x, this.W);
+    }
+
+    // where a huge box's drag ends so the cursor doesn't leave the screen
+    dragEnd(R) {
+      const right = this.W;
+      const bot = this.H;
+      const x = R.x + R.w > right - 16 ? Math.max(R.x + Math.min(R.w, 40), right - 30) : R.x + R.w;
+      const y = R.y + R.h > bot - 16 ? Math.max(R.y + Math.min(R.h, 40), bot - 40) : R.y + R.h;
+      return [Math.min(x, R.x + R.w), Math.min(y, R.y + R.h)];
+    }
+
+    // the text block's box on screen (follows a growing heading's scale)
+    textBox(u, R) {
+      const s = u.curScale || 1;
+      const L0 = u.lines[0];
+      const L1 = u.lines[u.lines.length - 1];
+      const lx = Math.min(...u.lines.map((L) => L.x));
+      const rx = Math.max(...u.lines.map((L) => L.x + L.w));
+      return { x: R.x + lx * s, y: R.y + L0.y * s, w: (rx - lx) * s, h: (L1.y + L1.h - L0.y) * s, lh: L0.h * s };
+    }
+
+    isLine(u) {
+      return u.kind === "box" && ((u.h <= 4 && u.w >= 24) || (u.w <= 4 && u.h >= 24));
+    }
+
+    // the leg a unit's cursor is on: where it's headed, how, and which tool it shows
+    legOf(n, u, R) {
+      const W = this.W;
+      const H = this.H;
+      const cl = (x, y) => [clamp(x, 4, W - 4), clamp(y, 4, H - 4)];
+      if (u.kind === "dup") {
+        const S = u.src.getBoundingClientRect();
+        if (u.step <= 2) return { key: "grab", p: cl(S.left + u.grab[0], S.top + u.grab[1]), shape: u.step === 2 ? "dup" : "arrow" };
+        const D = u.el.getBoundingClientRect();
+        return { key: "carry", p: [D.left + u.grab[0], D.top + u.grab[1]], shape: u.step === 3 ? "dup" : "arrow", o: { speed: 0.6, drag: true } };
+      }
+      if (u.line) {
+        const horiz = u.w >= u.h;
+        const a = horiz ? cl(R.x, R.y + R.h / 2) : cl(R.x + R.w / 2, R.y);
+        const b = horiz ? cl(R.x + R.w, R.y + R.h / 2) : cl(R.x + R.w / 2, R.y + R.h);
+        if (u.step <= 1) return { key: "to", p: a, shape: "pen-add" };
+        if (u.step <= 3) return { key: "to-end", p: b, shape: "pen", o: { bend: u.bend } };
+        return { key: "away", p: [b[0] + u.off[0], b[1] + u.off[1]], shape: u.step === 4 ? "pen" : "arrow", o: { speed: 1.4 } };
+      }
+      if (u.kind === "box" || u.kind === "media" || u.kind === "control") {
+        if (u.step === 0) return { key: "to", p: cl(R.x, R.y), shape: "cross" };
+        if (!u.endRel) {
+          const e = this.dragEnd(R);
+          u.endRel = [e[0] - R.x, e[1] - R.y];
+        }
+        return { key: "drag", p: [R.x + u.endRel[0], R.y + u.endRel[1]], shape: u.step === 2 ? "cross" : "arrow", o: { speed: 0.75, drag: true, bend: 0 } };
+      }
+      if (u.kind === "text") {
+        const tb = this.textBox(u, R);
+        if (u.step === 0) {
+          if (u.edit) return { key: "to", p: cl(tb.x + Math.min(tb.w * 0.5, 50) + u.jx, tb.y + Math.min(tb.lh, tb.h) * 0.55), shape: "arrow" };
+          return { key: "to", p: cl(tb.x, tb.y), shape: "cross" };
+        }
+        if (u.step === 2) return { key: "ghost", p: [tb.x + tb.w, tb.y + Math.min(tb.h, tb.lh)], shape: "cross", o: { speed: 0.9, drag: true, bend: 0 } };
+        if (u.step >= 3 && u.park) return { key: "park", p: [tb.x + u.park[0], tb.y + u.park[1]], shape: u.step === 3 ? "ibeam" : "arrow", o: { speed: 1.5 } };
+        return { key: "to", p: [n.x, n.y], shape: u.edit ? "arrow" : "cross" };
+      }
+      // icons
+      return { key: "to", p: cl(R.x + R.w / 2, R.y + R.h / 2), shape: "arrow" };
+    }
+
+    // ---- the spare cursors: a boids orbit (before the build, and around your pointer after)
+
+    follow(dt, list, target, scale = 1) {
+      const m = this.mouse;
+      const o = target;
+      const time = this.time;
+      if (m && this.lastM && dt > 0) {
+        const k = Math.min(1, dt * 18);
+        this.tv.x += ((m.x - this.lastM.x) / dt - this.tv.x) * k;
+        this.tv.y += ((m.y - this.lastM.y) / dt - this.tv.y) * k;
+      }
+      this.lastM = m ? { x: m.x, y: m.y } : null;
+      const R = 135 * scale * (1 + 0.18 * Math.sin(time * 0.55));
+      const swirl = Math.tanh(Math.cos(time * 0.11) * 3);
+      const want = [];
+      for (const c of list) {
+        const vx = c.x - o.x;
+        const vy = c.y - o.y;
+        const d = Math.hypot(vx, vy) || 0.01;
+        const nx = vx / d;
+        const ny = vy / d;
+        const ang = Math.atan2(vy, vx);
+        const off = (c.orbit - 120) * 0.55 * scale;
+        const rr = R * (1 + 0.3 * Math.sin(3 * ang + time * 0.7)) + off;
+        const tang = 300 * (0.7 + c.spin * 0.2) * swirl;
+        const rad = clamp((rr - d) * 4, -2600, 1400);
+        const far = Math.min(1, Math.max(0, (d - rr) / 600));
+        want.push([-ny * tang + nx * rad - ny * c.curl * 400 * far, nx * tang + ny * rad + nx * c.curl * 400 * far]);
+      }
+      for (let i = 0; i < list.length; i++) {
+        const c = list[i];
+        let ax = 0;
+        let ay = 0;
+        let wsum = 0;
+        for (let j = 0; j < list.length; j++) {
+          if (j === i) continue;
+          const q = list[j];
+          const d = Math.hypot(q.x - c.x, q.y - c.y);
+          if (d > 90) continue;
+          const w = 1 - d / 90;
+          ax += q.vx * w;
+          ay += q.vy * w;
+          wsum += w;
+        }
+        let [fx, fy] = want[i];
+        if (wsum > 0) {
+          fx = fx * 0.7 + (ax / wsum) * 0.3;
+          fy = fy * 0.7 + (ay / wsum) * 0.3;
+        }
+        const dist = Math.max(0, Math.hypot(c.x - o.x, c.y - o.y) - 180 * scale);
+        const maxV = c.speed * (1.3 + Math.min(3.2, dist / 90));
+        const L = Math.hypot(fx, fy);
+        if (L > maxV) {
+          fx *= maxV / L;
+          fy *= maxV / L;
+        }
+        let gx = (fx - c.vx) * 6;
+        let gy = (fy - c.vy) * 6;
+        const maxF = c.force * (1.4 + Math.min(5, dist / 50));
+        const G = Math.hypot(gx, gy);
+        if (G > maxF) {
+          gx *= maxF / G;
+          gy *= maxF / G;
+        }
+        c.vx += gx * dt;
+        c.vy += gy * dt;
+        c.x += c.vx * dt;
+        c.y += c.vy * dt;
+      }
+      // your own pointer pushes them aside
+      const R0 = 48;
+      if (m)
+        for (const c of list) {
+          const vx = c.x - m.x;
+          const vy = c.y - m.y;
+          const d = Math.hypot(vx, vy) || 0.01;
+          if (d >= R0) continue;
+          const nx = vx / d;
+          const ny = vy / d;
+          c.x = m.x + nx * R0;
+          c.y = m.y + ny * R0;
+          const rel = (c.vx - this.tv.x) * nx + (c.vy - this.tv.y) * ny;
+          if (rel < 0) {
+            c.vx -= nx * rel * 1.6;
+            c.vy -= ny * rel * 1.6;
+          }
+          c.vx += nx * 260;
+          c.vy += ny * 260;
+        }
+      // in flight a pointer leans into its heading
+      for (const c of list) {
+        if (Math.hypot(c.vx, c.vy) < 30) continue;
+        const d = ((((Math.atan2(c.vy, c.vx) * 180) / Math.PI + 128 - c.angle + 540) % 360) + 360) % 360 - 180;
+        c.angle += d * Math.min(1, dt * 8);
+      }
+    }
+
+    flockTarget() {
+      if (this.mouse) return { x: this.mouse.x, y: this.mouse.y };
+      const t = this.time;
+      return { x: this.W * (0.5 + 0.28 * Math.sin(t * 0.37)), y: this.H * (0.5 + 0.25 * Math.sin(t * 0.53 + 1)) };
+    }
+
+    stepSwarm(rects) {
+      const dt = this.dt;
+      const W = this.W;
+      const H = this.H;
+      for (const n of this.nibs) n.vis = this.time < n.born ? 0 : Math.min(1, n.vis + dt / 0.3);
+      const here = this.present();
+      // the swarm works faster when there's a lot to do or the reader is moving
+      this.tempo = clamp(2.1 + this.speedPx / 900 + (this.avail / Math.max(1, here.length)) * 0.5, 2.1, 4.5) * this.speed;
+
+      // before the build and after it: everyone orbits (after: around your pointer)
+      if (this.intro < 1 || this.outro) {
+        if (this.outro) {
+          this.spawnT -= dt;
+          const out = this.nibs.find((n) => n.away);
+          if (out && this.spawnT <= 0 && !reduced()) {
+            this.spawn(out);
+            this.spawnT = 0.04;
+          }
+        }
+        const list = this.present();
+        for (const n of list) {
+          n.mv = null;
+          n.shape = "arrow";
+          n.press = Math.max(0, n.press - dt * 6);
+        }
+        this.follow(dt, list, this.outro ? this.flockTarget() : { x: W / 2, y: H / 2 }, this.outro ? 1 : 0.7);
+        return;
+      }
+
+      // bring in more hands when work piles up
+      this.spawnT -= dt;
+      const busy = here.filter((n) => n.unit).length;
+      const want = clamp(8 + Math.floor(this.speedPx / 40) + Math.floor(this.avail / 2), 8, this.nibs.length);
+      if (here.length < want && this.avail > here.length - busy && this.spawnT <= 0) {
+        const out = this.nibs.find((n) => n.away);
+        if (out) {
+          this.spawn(out);
+          this.spawnT = 0.035;
+        }
+      }
+
+      for (const n of this.nibs) {
+        if (n.away) continue;
+        const ox = n.x;
+        const oy = n.y;
+        n.press = Math.max(0, n.press - dt * 6);
+        if (n.angle !== 0) n.angle = Math.abs(n.angle) < 0.5 ? 0 : n.angle * (1 - Math.min(1, dt * 10));
+        const R = n.unit && rects.get(n.unit);
+        if (R) {
+          const L = this.legOf(n, n.unit, R);
+          this.go(n, L.key, L.p, L.o);
+          this.advance(n, L.p, dt);
+          n.shape = L.shape;
+          n.idleFor = 0;
+        } else {
+          // nothing to do: wander a little, and slip away if there are plenty of hands
+          n.shape = "arrow";
+          n.idleFor += dt;
+          if (!n.leaving && !n.unit && n.idleFor > 2.5 && this.present().length > 8) {
+            n.leaving = true;
+            n.mv = null;
+          }
+          if (n.leaving) {
+            const p = [n.x > W / 2 ? W + 60 : -60, n.y];
+            if (!n.mv || n.mv.key !== "leave") {
+              n.mv = null;
+              this.go(n, "leave", p, { speed: 0.8 });
+              n.leaveTo = p;
+            }
+            this.advance(n, n.leaveTo, dt);
+            if (n.mv.done) {
+              n.away = true;
+              n.leaving = false;
+              n.mv = null;
+            }
+          } else {
+            const w = n.wander;
+            if (!w || (n.mv && n.mv.done && w.wait <= 0) || !n.mv) {
+              const p = [rand(W * 0.17, W * 0.83), rand(H * 0.2, H * 0.8)];
+              n.wander = { p, wait: rand(0.4, 1.4), key: "w" + Math.random() };
+              this.go(n, n.wander.key, p, { speed: 0.35 });
+            } else if (n.mv && n.mv.done) w.wait -= dt;
+            this.advance(n, n.wander.p, dt);
+          }
+        }
+        n.vx = (n.x - ox) / Math.max(dt, 1e-3);
+        n.vy = (n.y - oy) / Math.max(dt, 1e-3);
+      }
+    }
+
+    // ---- cursors: Swarmline's own set, tip (hotspot) on the point it works
+    drawSwarm(g, alpha) {
+      const fade = this.outro && reduced() ? 1 - easeInOut(this.outro.t) : 1;
+      for (const n of this.nibs) {
+        if (n.away) continue;
+        const a = alpha * n.vis * fade;
+        if (a < 0.02) continue;
+        this.drawCursor(g, n, a);
+      }
+      g.globalAlpha = 1;
+    }
+
+    drawCursor(g, n, a) {
+      const P = this.cursorPaths || (this.cursorPaths = {
+        arrow: new Path2D("M4.5 3.2 L4.5 21 L9.1 16.9 L12.3 23.9 L15.9 22.3 L12.8 15.4 L19.2 15.3 Z"),
+        hi: new Path2D("M6.3 7.4 L6.3 14.6"),
+        pencil: new Path2D("M3.2 3.2 L9 4.9 L20.6 16.5 L16.5 20.6 L4.9 9 Z"),
+        tip: new Path2D("M3.2 3.2 L6.6 4.2 L4.2 6.6 Z"),
+        band: new Path2D("M17.6 13.5 L13.5 17.6"),
+        cross: new Path2D("M12 2.5 V8.5 M12 15.5 V21.5 M2.5 12 H8.5 M15.5 12 H21.5"),
+        ibeam: new Path2D("M8.5 4.2 H15.5 M12 4.2 V19.8 M8.5 19.8 H15.5"),
+        plus: new Path2D("M21.5 18.9 V24.1 M18.9 21.5 H24.1"),
+      });
+      const HOTS = { arrow: [4.5, 3.2], dup: [4.5, 3.2], pen: [3.2, 3.2], "pen-add": [3.2, 3.2], cross: [12, 12], ibeam: [12, 12] };
+      const sh = HOTS[n.shape] ? n.shape : "arrow";
+      const [hx, hy] = HOTS[sh];
+      const s = 1.08 * (1 - n.press * 0.12);
+      const c = n.color;
+      g.save();
+      g.globalAlpha = a;
+      g.translate(n.x, n.y);
+      g.rotate((n.angle * Math.PI) / 180);
+      g.scale(s, s);
+      g.translate(-hx, -hy);
+      g.lineJoin = "round";
+      g.lineCap = "round";
+      g.shadowColor = "rgba(15,23,42,0.32)";
+      g.shadowBlur = 2.5;
+      g.shadowOffsetY = 2;
+      const badge = () => {
+        g.beginPath();
+        g.arc(21.5, 21.5, 5.2, 0, TAU);
+        g.fillStyle = c;
+        g.fill();
+        g.strokeStyle = "#fff";
+        g.lineWidth = 1.5;
+        g.stroke();
+        g.lineWidth = 1.6;
+        g.stroke(P.plus);
+      };
+      if (sh === "arrow" || sh === "dup") {
+        g.fillStyle = c;
+        g.fill(P.arrow);
+        g.shadowColor = "transparent";
+        g.strokeStyle = "#fff";
+        g.lineWidth = 1.6;
+        g.stroke(P.arrow);
+        g.globalAlpha = a * 0.45;
+        g.lineWidth = 1.2;
+        g.stroke(P.hi);
+        g.globalAlpha = a;
+        if (sh === "dup") badge();
+      } else if (sh === "pen" || sh === "pen-add") {
+        g.fillStyle = c;
+        g.fill(P.pencil);
+        g.shadowColor = "transparent";
+        g.strokeStyle = "#fff";
+        g.lineWidth = 1.6;
+        g.stroke(P.pencil);
+        g.fillStyle = "#fff";
+        g.fill(P.tip);
+        g.lineWidth = 1.3;
+        g.stroke(P.band);
+        if (sh === "pen-add") badge();
+      } else if (sh === "cross") {
+        g.strokeStyle = "#fff";
+        g.lineWidth = 4;
+        g.stroke(P.cross);
+        g.shadowColor = "transparent";
+        g.strokeStyle = c;
+        g.lineWidth = 1.8;
+        g.stroke(P.cross);
+        g.beginPath();
+        g.arc(12, 12, 1.9, 0, TAU);
+        g.fillStyle = c;
+        g.fill();
+        g.strokeStyle = "#fff";
+        g.lineWidth = 1.2;
+        g.stroke();
+      } else {
+        g.strokeStyle = "#fff";
+        g.lineWidth = 4;
+        g.stroke(P.ibeam);
+        g.shadowColor = "transparent";
+        g.strokeStyle = c;
+        g.lineWidth = 1.9;
+        g.stroke(P.ibeam);
+      }
+      g.restore();
+    }
+
+    // ---------------------------------------------------------------- drawing
+
+    draw() {
+      const g = this.g;
+      const { W, H, dpr } = this;
+      const v = this.env.view();
+      g.setTransform(dpr, 0, 0, dpr, 0, 0);
+      g.globalCompositeOperation = "source-over";
+      g.globalAlpha = 1;
+      g.clearRect(0, 0, W, H);
+      if (this.outro && this.outro.off) {
+        if (reduced()) return;
+        this.stepSwarm(new Map());
+        this.drawSwarm(g, 1);
+        return;
+      }
+
+      // intro: a wash of the page's own colour covers it while it's cleared
+      if (this.intro < 1) {
+        const k = this.intro < 0.45 ? easeOut(this.intro / 0.45) : 1 - easeInOut((this.intro - 0.45) / 0.55);
+        g.globalAlpha = k;
+        g.fillStyle = this.pageBg;
+        g.fillRect(0, 0, W, H);
+        g.globalAlpha = 1;
+      }
+
+      const rects = new Map();
+      const top = this.env.top;
+      for (const u of this.active) {
+        if (!this.inView(u, v, top, 60)) continue;
+        const R = this.liveRect(u);
+        if (R) rects.set(u, R);
+      }
+      this.stepSwarm(rects); // pointers first, so a shape being dragged sits exactly under its pointer
+      for (const u of this.active) if (u.kind === "dup" && u.step === 3 && u.state === 1) this.dragCopy(u);
+      for (const u of this.active) {
+        const R = rects.get(u);
+        if (R) this.mark(g, u, R);
+      }
+      if (this.sweep) {
+        const s = this.sweep;
+        const e = s.vTop + (s.vBottom - s.vTop) * easeInOut(s.p);
+        const line = this.dark ? "255,255,255" : "40,40,60";
+        const gl = g.createLinearGradient(0, e - 34, 0, e + 2);
+        gl.addColorStop(0, `rgba(${line},0)`);
+        gl.addColorStop(1, `rgba(${line},${this.dark ? 0.16 : 0.08})`);
+        g.fillStyle = gl;
+        g.fillRect(v.x, e - 34, v.w, 36);
+        const hl = g.createLinearGradient(v.x, 0, v.x + v.w, 0);
+        hl.addColorStop(0, rgba(INK, 0));
+        hl.addColorStop(0.5, rgba(INK, 0.75));
+        hl.addColorStop(1, rgba(INK, 0));
+        g.fillStyle = hl;
+        g.fillRect(v.x, e - 1, v.w, 2);
+      }
+      const sheetA = this.intro < 1 ? clamp((this.intro - 0.3) / 0.5, 0, 1) : 1;
+      this.drawSwarm(g, sheetA);
+    }
+
+    roundPath(g, x, y, w, h, r) {
+      g.beginPath();
+      if (g.roundRect && r && r.some((k) => k > 0.5)) g.roundRect(x, y, w, h, r);
+      else g.rect(x, y, w, h);
+    }
+
+    // a selection: a crisp 1px box, square corner handles and the size under it
+    sel(g, x, y, w, h, col, handles, badge) {
+      g.save();
+      g.strokeStyle = col;
+      g.lineWidth = 1;
+      g.strokeRect(Math.round(x) + 0.5, Math.round(y) + 0.5, Math.max(0, Math.round(w)), Math.max(0, Math.round(h)));
+      if (handles) {
+        g.fillStyle = "#fff";
+        for (const [hx, hy] of [[x, y], [x + w, y], [x, y + h], [x + w, y + h]]) {
+          g.fillRect(Math.round(hx - 3.5), Math.round(hy - 3.5), 7, 7);
+          g.strokeRect(Math.round(hx - 3.5) + 0.5, Math.round(hy - 3.5) + 0.5, 6, 6);
+        }
+      }
+      g.restore();
+      if (badge && w > 0) this.badge(g, `${Math.round(w)} × ${Math.round(h)}`, x + w / 2, y + h + 8, col);
+    }
+
+    badge(g, text, cx, ty, col) {
+      g.save();
+      g.font = `600 11px ${SANS}`;
+      const tw = g.measureText(text).width;
+      const bw = tw + 8;
+      const bx = Math.round(clamp(cx - bw / 2, 2, this.W - bw - 2));
+      const by = Math.round(ty > this.H - 70 ? ty - 40 : ty);
+      g.fillStyle = col;
+      this.roundPath(g, bx, by, bw, 16, [2, 2, 2, 2]);
+      g.fill();
+      g.fillStyle = "#fff";
+      g.textBaseline = "middle";
+      g.fillText(text, bx + 4, by + 8.5);
+      g.restore();
+    }
+
+    // what a designer sees while each piece is made
+    mark(g, u, R) {
+      const { x, y, w, h } = R;
+      if (u.kind === "dup") {
+        if (!u.src || !u.step) return;
+        const S = u.src.getBoundingClientRect();
+        const q = (u.step === 3 && u.ghost ? u.ghost.el : u.el).getBoundingClientRect(); // fresh: the copy moved this frame
+        const C = { x: q.left, y: q.top, w: q.width, h: q.height };
+        if (u.step <= 2) this.sel(g, S.left, S.top, S.width, S.height, INK, true, true);
+        else if (u.step === 3) {
+          this.sel(g, S.left, S.top, S.width, S.height, MEASURE, false, false);
+          this.sel(g, C.x, C.y, C.w, C.h, MEASURE, false, false);
+          this.measure(g, { x: S.left, y: S.top, w: S.width, h: S.height }, C);
+        } else if (u.step >= 5) this.sel(g, C.x, C.y, C.w, C.h, INK, true, true);
+        return;
+      }
+      if (u.line) {
+        const n = u.lead;
+        const horiz = u.w >= u.h;
+        const a = horiz ? [x, y + h / 2] : [x + w / 2, y];
+        const b = horiz ? [x + w, y + h / 2] : [x + w / 2, y + h];
+        if (!u.placed) return;
+        const pts = u.placed >= 2 ? [a, b] : [a];
+        const tail = u.placed === 1 && n && n.unit === u ? [n.x, n.y] : null;
+        g.save();
+        g.strokeStyle = INK;
+        g.lineWidth = 1.5;
+        g.beginPath();
+        g.moveTo(a[0], a[1]);
+        if (tail) g.lineTo(tail[0], tail[1]);
+        else if (pts[1]) g.lineTo(pts[1][0], pts[1][1]);
+        g.stroke();
+        for (const p of pts) {
+          g.beginPath();
+          g.arc(p[0], p[1], 3.6, 0, TAU);
+          g.fillStyle = "#fff";
+          g.fill();
+          g.stroke();
+        }
+        g.restore();
+        return;
+      }
+      if (u.kind === "box" || u.kind === "media" || u.kind === "control") {
+        if (!u.step) return;
+        let dw = w;
+        let dh = h;
+        if (u.step === 2) {
+          const n = u.lead;
+          if (n && n.unit === u) {
+            dw = clamp(n.x - x, 0, w);
+            dh = clamp(n.y - y, 0, h);
+          } else {
+            dw = 0;
+            dh = 0;
+          }
+        } else if (u.step === 25) {
+          const e = easeOut(clamp(u.ext || 0, 0, 1));
+          dw = u.dw0 + (w - u.dw0) * e;
+          dh = u.dh0 + (h - u.dh0) * e;
+        }
+        if (u.phase === 0) {
+          // the shape being drawn, before the real one fills in
+          g.save();
+          g.fillStyle = this.dark ? "rgba(255,255,255,0.08)" : "rgba(20,24,40,0.06)";
+          g.fillRect(x, y, dw, dh);
+          if (u.kind === "media" && u.step >= 3 && w > 28 && h > 28) this.cross(g, x, y, w, h, 0.3);
+          g.restore();
+        }
+        this.sel(g, x, y, dw, dh, INK, true, true);
+        return;
+      }
+      if (u.kind === "text") {
+        if (!u.step) return;
+        const tb = this.textBox(u, R);
+        if (u.step === 2) {
+          const n = u.lead;
+          const gw = n && n.unit === u ? Math.max(0, n.x - tb.x) : 0;
+          const gh = n && n.unit === u ? Math.max(0, n.y - tb.y) : 0;
+          this.sel(g, tb.x, tb.y, gw, gh, INK, true, true);
+          return;
+        }
+        if (u.step === 3) {
+          // typing: a frame round the text and the caret
+          this.sel(g, tb.x - 2, tb.y - 2, tb.w + 4, tb.h + 4, INK, false, false);
+          if (u.phase === 1) {
+            const s = u.curScale || 1;
+            const c = this.caretAt(u, u.typed);
+            g.fillStyle = INK;
+            g.fillRect(Math.round(x + c.x * s + 1), y + c.y * s + 1, Math.max(1.5, Math.min(2.5, (u.fs * s) / 18)), c.h * s - 2);
+          }
+          return;
+        }
+        if (u.step >= 4) this.sel(g, tb.x - 2, tb.y - 2, tb.w + 4, tb.h + 4, INK, true, true);
+        return;
+      }
+      if (u.kind === "glyph" && u.step >= 1) this.sel(g, x - 2, y - 2, w + 4, h + 4, INK, true, false);
+    }
+
+    // the gap between two shapes, the way a design tool shows it while you drag
+    measure(g, a, b) {
+      const oy = Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y);
+      const ox = Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x);
+      let p0;
+      let p1;
+      if (oy > 0) {
+        const yy = Math.max(a.y, b.y) + oy / 2;
+        const [l, r] = a.x < b.x ? [a, b] : [b, a];
+        if (r.x - (l.x + l.w) <= 0) return;
+        p0 = [l.x + l.w, yy];
+        p1 = [r.x, yy];
+      } else if (ox > 0) {
+        const xx = Math.max(a.x, b.x) + ox / 2;
+        const [t, d] = a.y < b.y ? [a, b] : [b, a];
+        if (d.y - (t.y + t.h) <= 0) return;
+        p0 = [xx, t.y + t.h];
+        p1 = [xx, d.y];
+      } else return;
+      const gap = Math.round(Math.hypot(p1[0] - p0[0], p1[1] - p0[1]));
+      g.save();
+      g.strokeStyle = MEASURE;
+      g.lineWidth = 1;
+      g.beginPath();
+      g.moveTo(p0[0], p0[1]);
+      g.lineTo(p1[0], p1[1]);
+      g.stroke();
+      g.restore();
+      const horiz = p0[1] === p1[1];
+      this.badge(g, String(gap), horiz ? (p0[0] + p1[0]) / 2 : p0[0] + 18, horiz ? p0[1] + 8 : (p0[1] + p1[1]) / 2 - 9, MEASURE);
+    }
+
+    // an image placeholder's diagonals
+    cross(g, x, y, w, h, a) {
+      g.save();
+      g.globalAlpha = a;
+      g.strokeStyle = INK;
+      g.lineWidth = 1;
+      g.beginPath();
+      g.moveTo(x, y);
+      g.lineTo(x + w, y + h);
+      g.moveTo(x + w, y);
+      g.lineTo(x, y + h);
+      g.stroke();
+      g.restore();
+    }
+
+    // ---------------------------------------------------------------- HUD
+
+    updateHud(force) {
+      const env = this.env;
+      const v = env.view();
+      const H = Math.max(1, env.height);
+      let shown = 0;
+      for (const b of this.bands) shown += Math.min(H, b.bottom) - Math.max(0, b.top);
+      const frac = this.outro ? 1 : clamp(shown / H, 0, 1);
+      this.$(".bar i").style.width = (frac * 100).toFixed(1) + "%";
+      const step = v.h * 0.82;
+      const screens = Math.max(1, Math.ceil((H - v.h) / step) + 1);
+      const screen = clamp(Math.round(env.top / step) + 1, 1, screens);
+      const t = this.$(".meta .t");
+      const s = this.$(".meta .s");
+      if (this.outro) {
+        t.textContent = `Built in ${this.secs.toFixed(1)} s`;
+        s.textContent = `${this.units.length.toLocaleString()} elements · ${screens} screen${screens > 1 ? "s" : ""} · live again`;
+        return;
+      }
+      if (!force && this.intro < 1) return;
+      const crews = this.nibs.filter((n) => n.unit && !n.away).length;
+      const viewDone = !this.sweep && !this.gapIn(env.top, Math.min(H, env.top + v.h));
+      if (!viewDone) t.textContent = `Building screen ${screen} of ${screens}`;
+      else if (!this.tour) t.textContent = `Screen ${screen} built · scroll or tour`;
+      else t.textContent = `On to screen ${Math.min(screens, screen + 1)}`;
+      s.textContent = `${this.done.toLocaleString()} / ${this.units.length.toLocaleString()} elements · ${crews} cursor${crews === 1 ? "" : "s"} at work`;
+    }
+
+    destroy(quick) {
+      if (this.dead) return;
+      this.dead = true;
+      cancelAnimationFrame(this.raf);
+      for (const u of this.unbinds || []) u();
+      this.unshiftAll();
+      for (const u of this.units) if (u.scaleWas) this.unscaleText(u);
+      if (this.sfx) {
+        if (!quick) this.sfx.release();
+        this.sfx.close(quick ? 0.1 : 0.8);
+      }
+      this.stage.restore(); // the page is always fully back
+      const host = this.host;
+      host.style.setProperty("transition", `opacity ${quick ? 0.15 : 0.3}s ease`, "important");
+      host.style.setProperty("opacity", "0", "important");
+      setTimeout(() => host.remove(), quick ? 170 : 330);
+    }
   }
 
-  // WebGL canvases only hand back their pixels in the same frame they were drawn, so
-  // read every page canvas inside an animation frame (ours runs after the page's).
-  async function grabCanvases() {
-    const out = new Map();
-    const list = [...document.querySelectorAll("canvas")].filter((c) => c.width > 8 && c.height > 8).slice(0, 12);
-    if (!list.length) return out;
-    await new Promise((res) =>
-      requestAnimationFrame(() => {
-        for (const c of list) {
-          let url = null;
-          let live = false;
-          try {
-            const probe = document.createElement("canvas");
-            probe.width = probe.height = 12;
-            const g = probe.getContext("2d");
-            g.drawImage(c, 0, 0, 12, 12);
-            const d = g.getImageData(0, 0, 12, 12).data;
-            let a = 0;
-            for (let i = 3; i < d.length; i += 4) a += d[i];
-            if (a > 0) {
-              live = true;
-              url = c.toDataURL("image/webp", 0.85);
-            }
-          } catch (_) {
-            // tainted by cross-origin images: can't read it, but can still mirror it
-            live = true;
-          }
-          out.set(c, { url, live });
-        }
-        res();
-      }),
-    );
-    return out;
-  }
+  // --------------------------------------------------------------------- control
 
   let app = null;
-  let lastShot = null;
 
   function start() {
-    if (app) return;
-    const a = (app = new App());
-    a.run().catch((err) => {
-      // never leave the page hidden (background.js may have hidden it for its screenshot)
+    if (app || !document.body) return;
+    try {
+      app = new App();
+    } catch (err) {
       console.error("[swarmline]", err);
-      unhidePage();
-      if (app === a) stop(false);
-    });
+      if (app) app.destroy(true);
+      app = null;
+    }
   }
 
-  function stop(reveal) {
+  function stop(quick) {
     if (!app) return;
     const a = app;
     app = null;
-    a.destroy(reveal);
+    a.destroy(quick);
   }
 
-  function restart() {
+  function replay() {
     if (app) {
-      const a = app;
+      const env = app.env;
+      app.destroy(true);
       app = null;
-      a.dead = true;
-      cancelAnimationFrame(a.raf);
-      for (const u of a.unbinds || []) u();
-      a.view.host.remove();
-      if (a.sfx) a.sfx.close(0.1);
-      // rebuild from where the first run started so screenshot crops line up again
-      if (lastShot) a.env.scrollTo(lastShot.at.sy, lastShot.at.sx);
+      env.scrollTo(0);
     }
-    start();
+    setTimeout(start, 200);
   }
 
   window[KEY] = {
     toggle() {
-      if (app) stop(false);
+      if (app) stop();
       else start();
     },
     start,
@@ -4460,7 +2910,6 @@
     get app() {
       return app;
     },
-    debug: { captureModel, detectEnv, Sound },
   };
   start();
 })();
