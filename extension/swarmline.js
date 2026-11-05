@@ -41,6 +41,14 @@
   const easeOut = (t) => 1 - Math.pow(1 - t, 3);
   const easeInOut = (t) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
   const easeSine = (t) => (1 - Math.cos(Math.PI * t)) / 2;
+  // minimum-jerk profile: how a hand moves a pointer (eases in and out, no sudden starts)
+  const minJerk = (t) => t * t * t * (t * (t * 6 - 15) + 10);
+  const smooth01 = (a, b, x) => {
+    const t = clamp((x - a) / (b - a), 0, 1);
+    return t * t * (3 - 2 * t);
+  };
+  const angDiff = (a, b) => ((((a - b + Math.PI) % TAU) + TAU) % TAU) - Math.PI;
+  const REST = -2.3; // a pointer's natural tilt: tip up and to the left
   const reduced = () => {
     try {
       return matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -812,12 +820,12 @@ canvas.off{pointer-events:none}
       }
 
       // work waits (briefly) for its crew to arrive, so the swarm visibly does it
-      const ready = (u) => !u.lead || u.lead.attached || (u.waitT = (u.waitT || 0) + sdt) > 0.6;
+      const ready = (u) => !u.lead || u.lead.attached || (u.waitT = (u.waitT || 0) + sdt) > 1.8;
       for (const u of this.active) {
         if (u.state !== 1) continue;
         if (u.kind === "box") {
           if (u.phase === 0) {
-            if (ready(u)) u.p += sdt / 0.42;
+            if (ready(u)) u.p += sdt / (0.6 + Math.min(0.5, (u.w + u.h) / 2400));
             if (u.p >= 1) {
               u.phase = 1;
               u.p = 0;
@@ -839,14 +847,17 @@ canvas.off{pointer-events:none}
             }
           } else {
             // typing: a natural, slightly uneven rhythm; long paragraphs speed up
-            const rate = Math.max(42, u.total / 1.2) * (0.75 + Math.random() * 0.6);
-            u.typed = Math.min(u.total, u.typed + rate * sdt);
+            const rate = Math.max(34, u.total / 2) * (0.75 + Math.random() * 0.6);
+            // like a carriage return: typing waits while the text cursor hops to the next line
+            const L = u.lead;
+            const hop = L && L.attached && L.move && L.move.hop && L.move.t < 0.85;
+            if (!hop) u.typed = Math.min(u.total, u.typed + rate * sdt);
             if (u.mode !== "fade") st.clip(u.el, this.typedPath(u, Math.floor(u.typed)));
             if (u.typed >= u.total) this.complete(u);
           }
         } else if (u.kind === "media" || u.kind === "control") {
           if (u.phase === 0) {
-            if (ready(u)) u.p += sdt / 0.38;
+            if (ready(u)) u.p += sdt / 0.5;
             if (u.p >= 1) {
               u.phase = 1;
               u.p = 0;
@@ -998,7 +1009,7 @@ canvas.off{pointer-events:none}
         this.nibs.push({
           i, unit: null, role: 0, attached: false, vis: 0, color: PALETTE[i % PALETTE.length],
           x: this.W / 2 + Math.cos(a) * 6, y: this.H / 2 + Math.sin(a) * 6,
-          vx: Math.cos(a) * (700 + (i % 4) * 160), vy: Math.sin(a) * (700 + (i % 4) * 160), ang: a,
+          vx: 0, vy: 0, ang: REST, tool: 0, goal: null, move: null, hand: i % 2 ? 1 : -1,
           trail: [], seed: Math.random() * Math.PI * 2, born: 0.55 + i * 0.012, size: 1.2 + (i % 3) * 0.14,
           ring: i % 3 === 2 ? 1 : 0, orb: a, orbiting: false,
         });
@@ -1032,7 +1043,7 @@ canvas.off{pointer-events:none}
       const total = free.length;
       const R0 = clamp(54 + total * 4.2, 74, 150);
       const radii = [R0, R0 * 0.56];
-      const speeds = [0.85, -1.25];
+      const speeds = [0.3, -0.42];
       const cx = clamp(this.anchor[0], R0 + 24, W - R0 - 24);
       const cy = clamp(this.anchor[1], R0 + 24, H - R0 - 96);
       const out = new Map();
@@ -1113,14 +1124,20 @@ canvas.off{pointer-events:none}
         return this.perim(R, easeInOut(u.phase === 0 ? k : 1) - n.role * 0.09);
       }
       if (u.kind === "text") {
-        const c = this.caretAt(u, u.typed);
-        if (n.role === 0) return [R.x + c.x + 4, R.y + c.y + c.h * 0.62];
+        // glide between letters rather than stepping (same line only)
+        let c = this.caretAt(u, u.typed);
+        const c2 = this.caretAt(u, Math.min(u.total, Math.floor(u.typed) + 1));
+        if (c2.y === c.y) c = { x: c.x + (c2.x - c.x) * (u.typed % 1), y: c.y, h: c.h };
+        if (n.role === 0) {
+          n.beamH = c.h; // the text cursor matches the size of the line being typed
+          return [R.x + c.x + Math.max(6, c.h * 0.14), R.y + c.y + c.h * 0.5 + Math.min(4, c.h * 0.08)];
+        }
         // a helper hovers a little ahead, where the next words go
         const ahead = this.caretAt(u, Math.min(u.total, u.typed + 14));
         return [R.x + ahead.x + 10, R.y + ahead.y - 6];
       }
       if (u.kind === "glyph") {
-        const a = this.time * 7 + n.role * 2.1;
+        const a = this.time * 3 + n.role * 2.1;
         const rr = Math.hypot(R.w, R.h) / 2 + 6;
         return [R.x + R.w / 2 + Math.cos(a) * rr, R.y + R.h / 2 + Math.sin(a) * rr];
       }
@@ -1129,89 +1146,112 @@ canvas.off{pointer-events:none}
       return [R.x + R.w * [0.1, 0.9, 0.5, 0.3][n.role % 4], R.y + R.h * c];
     }
 
-    stepSwarm(rects, v) {
+    // where a nib is headed this frame and why; a new "why" starts a new move
+    goalOf(n, rects, orbit) {
+      const R = n.unit && rects.get(n.unit);
+      if (R) return { key: n.unit, p: this.workPoint(n, n.unit, R), work: true };
+      const o = orbit.get(n);
+      if (o) {
+        // a little personal drift, so the rings feel alive rather than mechanical
+        const t = this.time;
+        return { key: "orbit", p: [o[0] + Math.sin(t * 0.7 + n.seed) * 6, o[1] + Math.cos(t * 0.55 + n.seed * 1.3) * 5], work: false };
+      }
+      return { key: "anchor", p: this.anchor.slice(), work: false };
+    }
+
+    stepSwarm(rects) {
       const dt = this.dt;
       const W = this.W;
       const H = this.H;
-      const want = this.nextSpot(rects, v);
+      const want = this.nextSpot(rects, this.env.view());
       if (!this.anchor) this.anchor = [W / 2, H * 0.45];
-      const ak = 1 - Math.exp(-dt * 3);
+      const ak = 1 - Math.exp(-dt * 1.6);
       this.anchor[0] += (want[0] - this.anchor[0]) * ak;
       this.anchor[1] += (want[1] - this.anchor[1]) * ak;
-      let sweepY = null;
-      if (this.sweep) sweepY = this.sweep.vTop + (this.sweep.vBottom - this.sweep.vTop) * easeInOut(this.sweep.p);
       const free = this.nibs.filter((n) => !n.unit || !rects.get(n.unit));
-      const orbit = !this.outro && sweepY == null ? this.orbitTargets(free, dt) : null;
+      const orbit = this.outro ? new Map() : this.orbitTargets(free, dt);
+      const pace = 0.75 + 0.25 * this.speed;
       for (const n of this.nibs) {
-        n.vis = this.time < n.born ? 0 : Math.min(1, n.vis + dt / 0.3);
-        let tx;
-        let ty;
-        let stick = false;
-        const R = n.unit && rects.get(n.unit);
-        const target = orbit && orbit.get(n);
-        if (!target) n.orbiting = false;
+        n.vis = this.time < n.born ? 0 : Math.min(1, n.vis + dt / 0.4);
+        if (!orbit.has(n)) n.orbiting = false;
+        const ox = n.x;
+        const oy = n.y;
+        let working = false;
         if (this.outro) {
-          // the rings unwind: each nib spirals out and away
-          const a = (Math.atan2(n.y - H / 2, n.x - W / 2) || n.seed) + 0.8;
-          tx = n.x + Math.cos(a) * 900;
-          ty = n.y + Math.sin(a) * 900;
-        } else if (R) {
-          [tx, ty] = this.workPoint(n, n.unit, R);
-          if (!n.attached && Math.hypot(tx - n.x, ty - n.y) < 16) n.attached = true;
-          stick = n.attached;
-        } else if (sweepY != null) {
-          const j = free.indexOf(n);
-          tx = v.x + (v.w * (j + 0.5)) / Math.max(1, free.length);
-          ty = sweepY + Math.sin(this.time * 6 + j) * 6;
-        } else if (target) {
-          [tx, ty] = target;
+          // the swarm drifts outward and away, gathering pace
+          if (n.outA == null) n.outA = (Math.atan2(n.y - H / 2, n.x - W / 2) || n.seed) + 0.5 * n.hand;
+          const sp = 120 + 1300 * this.outro.t * this.outro.t;
+          n.x += Math.cos(n.outA) * sp * dt;
+          n.y += Math.sin(n.outA) * sp * dt;
         } else {
-          tx = this.anchor[0];
-          ty = this.anchor[1];
-        }
-        if (stick) {
-          const k = 1 - Math.exp(-dt * 36);
-          const nx = n.x + (tx - n.x) * k;
-          const ny = n.y + (ty - n.y) * k;
-          n.vx = (nx - n.x) / Math.max(dt, 1e-3);
-          n.vy = (ny - n.y) / Math.max(dt, 1e-3);
-          n.x = nx;
-          n.y = ny;
-        } else {
-          const dx = tx - n.x;
-          const dy = ty - n.y;
-          const d = Math.hypot(dx, dy) || 1;
-          // arrive smoothly: fast across the page, easing off as it closes in
-          const sp = Math.min(2200, d * 6.2);
-          let ax = ((dx / d) * sp - n.vx) * 9;
-          let ay = ((dy / d) * sp - n.vy) * 9;
-          for (const m of this.nibs) {
-            if (m === n || (n.orbiting && m.orbiting)) continue; // the rings keep their own spacing
-            const ex = n.x - m.x;
-            const ey = n.y - m.y;
-            const e = ex * ex + ey * ey;
-            if (e < 576 && e > 0.01) {
-              const s = Math.sqrt(e);
-              const push = 1400 * (1 - s / 24);
-              ax += (ex / s) * push;
-              ay += (ey / s) * push;
+          const G = this.goalOf(n, rects, orbit);
+          working = G.work;
+          if (G.key !== n.goal) {
+            // plan a new move: a gentle arc, longer for longer trips (like a hand)
+            n.goal = G.key;
+            const dx = G.p[0] - n.x;
+            const dy = G.p[1] - n.y;
+            const d = Math.hypot(dx, dy);
+            const bend = d * (0.08 + Math.random() * 0.14) * (Math.random() < 0.8 ? n.hand : -n.hand);
+            n.move = d < 4 ? null : {
+              sx: n.x, sy: n.y, t: 0,
+              dur: ((0.42 + 0.2 * Math.log2(1 + d / 50)) * (0.9 + Math.random() * 0.25)) / pace,
+              bx: (-dy / (d || 1)) * bend, by: (dx / (d || 1)) * bend,
+            };
+            n.attached = false;
+          } else if (working && n.last && Math.hypot(G.p[0] - n.last[0], G.p[1] - n.last[1]) > 40) {
+            // the work point leapt (a new line, the next edge): hop there in a quick, eased move
+            const d = Math.hypot(G.p[0] - n.x, G.p[1] - n.y);
+            n.move = { sx: n.x, sy: n.y, t: 0, hop: true, dur: (0.16 + 0.05 * Math.log2(1 + d / 50)) / pace, bx: 0, by: -Math.min(24, d * 0.12) };
+          }
+          n.last = G.p;
+          let px = G.p[0];
+          let py = G.p[1];
+          const M = n.move;
+          if (M && M.t < 1) {
+            M.t = Math.min(1, M.t + dt / M.dur);
+            const e = minJerk(M.t);
+            const cx = (M.sx + px) / 2 + M.bx;
+            const cy = (M.sy + py) / 2 + M.by;
+            const i = 1 - e;
+            px = i * i * M.sx + 2 * i * e * cx + e * e * px;
+            py = i * i * M.sy + 2 * i * e * cy + e * e * py;
+          }
+          if (working && !n.attached && (!M || M.t >= 0.9)) n.attached = true;
+          // follow the plan through a soft spring, so even jumps in the plan come out smooth
+          // (on the job it holds tight, so it stays right on the caret or the line it traces)
+          const k = 1 - Math.exp(-dt * (working && n.attached ? 34 : 10));
+          n.x += (px - n.x) * k;
+          n.y += (py - n.y) * k;
+          if (!working) {
+            // keep a little personal space while travelling
+            for (const m of this.nibs) {
+              if (m === n || (n.orbiting && m.orbiting)) continue;
+              const ex = n.x - m.x;
+              const ey = n.y - m.y;
+              const q2 = ex * ex + ey * ey;
+              if (q2 < 484 && q2 > 0.01) {
+                const q = Math.sqrt(q2);
+                n.x += (ex / q) * (22 - q) * Math.min(1, dt * 3);
+                n.y += (ey / q) * (22 - q) * Math.min(1, dt * 3);
+              }
             }
           }
-          const am = Math.hypot(ax, ay) || 1;
-          const step = Math.min(8200 * dt, am * dt);
-          n.vx += (ax / am) * step;
-          n.vy += (ay / am) * step;
-          n.x += n.vx * dt;
-          n.y += n.vy * dt;
         }
-        // turn smoothly towards the direction of travel (no snapping or jitter)
-        if (Math.hypot(n.vx, n.vy) > 30) {
-          let da = Math.atan2(n.vy, n.vx) - n.ang;
-          da = ((da + Math.PI) % TAU + TAU) % TAU - Math.PI;
-          n.ang += da * (1 - Math.exp(-dt * (stick ? 9 : 14)));
-        }
+        // velocity (smoothed) drives a gentle lean into the direction of travel
+        const iv = 1 / Math.max(dt, 1e-3);
+        const vk = 1 - Math.exp(-dt * 8);
+        n.vx += ((n.x - ox) * iv - n.vx) * vk;
+        n.vy += ((n.y - oy) * iv - n.vy) * vk;
+        const spd = Math.hypot(n.vx, n.vy);
+        const lean = 0.6 * smooth01(160, 900, spd);
+        const aim = spd > 1 ? REST + angDiff(Math.atan2(n.vy, n.vx), REST) * lean : REST;
+        n.ang += angDiff(aim, n.ang) * (1 - Math.exp(-dt * 5));
+        // the lead of a line being typed becomes a text cursor
+        const typing = working && n.attached && n.role === 0 && n.unit.kind === "text" && n.unit.phase === 1;
+        n.tool += ((typing ? 1 : 0) - n.tool) * (1 - Math.exp(-dt * 9));
         n.trail.push(n.x, n.y);
-        if (n.trail.length > 36) n.trail.splice(0, 2);
+        if (n.trail.length > 28) n.trail.splice(0, 2);
       }
     }
 
@@ -1226,8 +1266,8 @@ canvas.off{pointer-events:none}
         g.strokeStyle = n.color;
         for (let i = 1; i < segs; i++) {
           const f = i / segs;
-          g.globalAlpha = a * f * f * 0.7;
-          g.lineWidth = (0.6 + 2.6 * f) * n.size;
+          g.globalAlpha = a * f * f * 0.45 * (1 - n.tool);
+          g.lineWidth = (0.6 + 2.2 * f) * n.size;
           g.beginPath();
           g.moveTo(T[i * 2 - 2], T[i * 2 - 1]);
           g.lineTo(T[i * 2], T[i * 2 + 1]);
@@ -1238,10 +1278,13 @@ canvas.off{pointer-events:none}
         const a = alpha * n.vis * fade;
         if (a < 0.02) continue;
         const s = n.size;
-        g.globalAlpha = a;
+        if (n.tool > 0.02) this.drawIBeam(g, n, a * n.tool);
+        if (n.tool > 0.98) continue;
+        g.globalAlpha = a * (1 - n.tool);
         g.save();
         g.translate(n.x, n.y);
         g.rotate(n.ang);
+        if (n.tool > 0) g.scale(1 - 0.5 * n.tool, 1 - 0.5 * n.tool);
         // soft glow, then an arrow head with a crisp light edge and a bright core
         g.shadowColor = n.color;
         g.shadowBlur = 16;
@@ -1267,6 +1310,36 @@ canvas.off{pointer-events:none}
       g.globalAlpha = 1;
       g.lineWidth = 1;
       g.lineCap = "butt";
+    }
+
+    // a text cursor (I-beam) in the nib's colour, with a light edge so it reads on any page
+    drawIBeam(g, n, a) {
+      const s = n.size;
+      const h = clamp((n.beamH || 20) * 0.46, 8, 30) * (0.7 + 0.3 * n.tool);
+      const w = clamp(h * 0.36, 3, 7) * Math.min(1.2, s);
+      g.save();
+      g.globalAlpha = a;
+      g.translate(n.x, n.y);
+      g.lineCap = "round";
+      g.lineJoin = "round";
+      g.beginPath();
+      g.moveTo(-w, -h);
+      g.quadraticCurveTo(0, -h + 1.5, 0, -h + 3);
+      g.quadraticCurveTo(0, -h + 1.5, w, -h);
+      g.moveTo(0, -h + 3);
+      g.lineTo(0, h - 3);
+      g.moveTo(-w, h);
+      g.quadraticCurveTo(0, h - 1.5, 0, h - 3);
+      g.quadraticCurveTo(0, h - 1.5, w, h);
+      g.strokeStyle = "rgba(255,255,255,0.9)";
+      g.lineWidth = 4.4;
+      g.stroke();
+      g.shadowColor = n.color;
+      g.shadowBlur = 12;
+      g.strokeStyle = n.color;
+      g.lineWidth = 2.2;
+      g.stroke();
+      g.restore();
     }
 
     // ---------------------------------------------------------------- drawing
@@ -1315,7 +1388,7 @@ canvas.off{pointer-events:none}
         g.fillStyle = hl;
         g.fillRect(v.x, e - 1, v.w, 2);
       }
-      this.stepSwarm(rects, v);
+      this.stepSwarm(rects);
       const sheetA = this.intro < 1 ? clamp((this.intro - 0.5) / 0.5, 0, 1) : 1;
       this.drawSwarm(g, sheetA);
     }
