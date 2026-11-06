@@ -45,6 +45,11 @@
   const CONTROL = new Set(["input", "textarea", "select"]);
 
   const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
+  const inkOn = (hex) => {
+    const n = parseInt(hex.slice(1), 16);
+    const l = (0.299 * (n >> 16) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255)) / 255;
+    return l > 0.62 ? "#14151C" : "#FFFFFF";
+  };
   // is `el`, or something it sits inside, in the set?
   const within = (el, set) => {
     if (!set || !set.size) return false;
@@ -529,8 +534,18 @@ canvas.off{pointer-events:none}
 .hud button.snd.off{color:#7D8496}
 .hud button.snd.tap{background:#2F6BFF;animation:hudpulse 1.6s ease-in-out infinite}
 @keyframes hudpulse{50%{box-shadow:0 0 0 4px rgba(47,107,255,.3)}}
-.meta{display:flex;flex-direction:column;gap:4px;padding:0 10px 0 4px;min-width:178px}
-.meta .t{font-weight:650;color:#fff}
+.meta{display:flex;flex-direction:column;gap:4px;padding:0 8px 0 4px;min-width:108px}
+.meta .t{font-weight:650;color:#fff;display:flex;align-items:center;gap:6px}
+.meta .t i{width:7px;height:7px;border-radius:50%;background:#19D3A2;flex:none;animation:livepulse 1.8s ease-out infinite}
+@keyframes livepulse{0%{box-shadow:0 0 0 0 rgba(25,211,162,.55)}100%{box-shadow:0 0 0 6px rgba(25,211,162,0)}}
+.crew{position:relative;flex:none;width:152px;height:24px;margin-right:6px}
+.crew .site{position:absolute;left:0;top:1px;width:22px;height:22px;border-radius:50%;background:#F1F2F5;display:grid;place-items:center;overflow:hidden;box-shadow:0 0 0 2px #181A24;color:#14151C;font:750 11px/1 ${SANS};text-transform:uppercase}
+.crew .site img{width:14px;height:14px;object-fit:contain;filter:grayscale(1) contrast(1.15)}
+.crew .av{--x:0px;--s:.4;position:absolute;left:0;top:1px;width:22px;height:22px;border-radius:50%;display:grid;place-items:center;font:700 11px/1 ${SANS};box-shadow:0 0 0 2px #181A24;opacity:0;transform:translateX(var(--x)) scale(var(--s));transition:transform .5s cubic-bezier(.3,1.3,.4,1),opacity .3s ease}
+.crew .av.in{--s:1;opacity:1}
+.crew .more{--x:0px;position:absolute;left:0;top:1px;height:22px;min-width:22px;padding:0 6px;border-radius:11px;display:grid;place-items:center;background:#2A2D3B;color:#C9CED9;font:650 10px/1 ${SANS};font-variant-numeric:tabular-nums;box-shadow:0 0 0 2px #181A24;transform:translateX(var(--x));transition:transform .5s cubic-bezier(.3,1.3,.4,1),opacity .3s ease}
+.crew .more[hidden]{display:grid;opacity:0}
+@media (prefers-reduced-motion:reduce){.crew .av,.crew .more{transition:opacity .2s}.meta .t i{animation:none}}
 .meta .s{color:#9CA3B4;font:500 11px/1 ${SANS};font-variant-numeric:tabular-nums}
 .hud button{all:unset;cursor:pointer;padding:8px 11px;border-radius:10px;color:#F4F5F8;background:rgba(255,255,255,.07);font:550 12px/1 ${SANS};transition:background .15s,color .15s}
 .hud button:hover{background:rgba(255,255,255,.14)}
@@ -1000,8 +1015,9 @@ canvas.off{pointer-events:none}
 <canvas aria-hidden="true"></canvas>
 <div class="hud" role="toolbar" aria-label="Swarmline">
   <svg class="mark" viewBox="0 0 128 128" aria-hidden="true"><defs><linearGradient id="swl-g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#FF5470"/><stop offset=".52" stop-color="#9B4DFF"/><stop offset="1" stop-color="#2E6BFF"/></linearGradient></defs><rect width="128" height="128" rx="30" fill="url(#swl-g)"/><path d="M86 56 V44 a12 12 0 0 0 -12 -12 H32 a12 12 0 0 0 -12 12 V84 a12 12 0 0 0 12 12 H62" fill="none" stroke="#fff" stroke-width="10" stroke-linecap="round"/><path d="M35 62 H64" stroke="#fff" stroke-width="9" stroke-linecap="round"/><path d="M82 60 L82 93.6 L90.5 86 L96.1 98.5 L102.6 95.6 L97 83.3 L108.2 83.1 Z" fill="#fff" stroke="#24104F" stroke-width="3" stroke-linejoin="round"/></svg>
-  <div class="meta" aria-live="polite"><span class="t">Clearing the canvas…</span><span class="s">&nbsp;</span></div>
-  <button data-a="tour" class="${this.tour ? "on" : ""}" aria-pressed="${this.tour}" title="Glide through the page screen by screen (T)">Auto-tour</button>
+  <div class="meta" aria-live="polite"><span class="t"><i aria-hidden="true"></i><b>Live agents</b></span><span class="s">joining…</span></div>
+  <div class="crew" aria-hidden="true"><span class="site"></span><span class="more" hidden></span></div>
+  <button data-a="tour" class="${this.tour ? "on" : ""}" aria-pressed="${this.tour}" title="Glide down the page as it's built (T)">Auto-tour</button>
   <button data-a="speed" title="Build speed" aria-label="Build speed 1×">1×</button>
   <button data-a="sound" class="snd" title="Sound (M)" aria-label="Sound (M)"></button>
   <button data-a="finish" title="Show the finished page now (F)">Finish</button>
@@ -3435,29 +3451,112 @@ canvas.off{pointer-events:none}
 
     updateHud(force) {
       const env = this.env;
-      const v = env.view();
       const H = Math.max(1, env.height);
       let shown = 0;
       for (const b of this.bands) shown += Math.min(H, b.bottom) - Math.max(0, b.top);
       const frac = this.outro ? 1 : clamp(shown / H, 0, 1);
       this.$(".bar i").style.width = (frac * 100).toFixed(1) + "%";
-      const step = v.h * 0.82;
-      const screens = Math.max(1, Math.ceil((H - v.h) / step) + 1);
-      const screen = clamp(Math.round(env.top / step) + 1, 1, screens);
-      const t = this.$(".meta .t");
+      const t = this.$(".meta .t b");
       const s = this.$(".meta .s");
+      // the agents are the cursors on screen: more come in for a busy section, idle ones leave
+      const here = this.present();
+      this.renderSite();
+      this.renderCrew(here);
+      const n = here.length;
       if (this.outro) {
         t.textContent = `Built in ${this.secs.toFixed(1)} s`;
-        s.textContent = `${this.units.length.toLocaleString()} elements · ${screens} screen${screens > 1 ? "s" : ""} · live again`;
+        s.textContent = "live again";
         return;
       }
       if (!force && this.intro < 1) return;
-      const crews = this.nibs.filter((n) => n.unit && !n.away).length;
-      const viewDone = !this.sweep && !this.gapIn(env.top, Math.min(H, env.top + v.h));
-      if (!viewDone) t.textContent = `Building screen ${screen} of ${screens}`;
-      else if (!this.tour) t.textContent = `Screen ${screen} built · scroll or tour`;
-      else t.textContent = `On to screen ${Math.min(screens, screen + 1)}`;
-      s.textContent = `${this.done.toLocaleString()} / ${this.units.length.toLocaleString()} elements · ${crews} cursor${crews === 1 ? "" : "s"} at work`;
+      t.textContent = "Live agents";
+      s.textContent = `${n} agent${n === 1 ? "" : "s"} working`;
+    }
+
+    // avatars of the agents on screen: their initial in their cursor's colour, five at most
+    // (no two with the same letter), now and then trading places; the rest are "+N"
+    renderCrew(here) {
+      const box = this.$(".crew");
+      if (!box) return;
+      const ids = new Set(here.map((n) => n.id));
+      const order = (this.crewOrder || []).filter((id) => ids.has(id));
+      for (const n of here) {
+        if (!order.includes(n.id)) order.splice(Math.floor(Math.random() * (Math.min(order.length, 4) + 1)), 0, n.id);
+      }
+      if (order.length > 1 && this.time - (this.crewSwapT || 0) > 1.3) {
+        this.crewSwapT = this.time;
+        const i = Math.floor(Math.random() * Math.min(5, order.length));
+        let j = Math.floor(Math.random() * order.length);
+        if (j === i) j = (i + 1) % order.length;
+        [order[i], order[j]] = [order[j], order[i]];
+      }
+      this.crewOrder = order;
+      const shown = [];
+      const letters = new Set();
+      for (const id of order) {
+        const n = this.nibs[id];
+        const L = n.name[0];
+        if (letters.has(L)) continue;
+        letters.add(L);
+        shown.push(n);
+        if (shown.length === 5) break;
+      }
+      if (!this.avs) this.avs = new Map();
+      for (const n of this.nibs) {
+        let a = this.avs.get(n.id);
+        const i = shown.indexOf(n);
+        if (i < 0) {
+          if (a) a.classList.remove("in");
+          continue;
+        }
+        if (!a) {
+          a = document.createElement("span");
+          a.className = "av";
+          a.textContent = n.name[0];
+          a.style.background = n.color;
+          a.style.color = inkOn(n.color);
+          box.appendChild(a);
+          this.avs.set(n.id, a);
+          a.style.setProperty("--x", 28 + i * 17 + "px");
+          void a.offsetWidth; // start small at its place, then pop in
+        }
+        a.style.setProperty("--x", 28 + i * 17 + "px");
+        a.style.zIndex = String(10 - i);
+        a.classList.add("in");
+      }
+      const more = box.querySelector(".more");
+      const extra = here.length - shown.length;
+      more.hidden = extra <= 0;
+      if (extra > 0) more.textContent = "+" + extra;
+      more.style.setProperty("--x", 28 + shown.length * 17 + 4 + "px");
+    }
+
+    // the site being built, as a round black-and-white badge: its favicon, or its initial
+    renderSite() {
+      const box = this.$(".crew .site");
+      if (!box || box.firstChild) return;
+      const host = (location.hostname || "").replace(/^www\./, "");
+      const letter = () => {
+        box.textContent = (host || document.title || "·").trim()[0] || "·";
+      };
+      box.title = host;
+      let href = "";
+      try {
+        const links = [...document.querySelectorAll('link[rel~="icon" i], link[rel="apple-touch-icon" i]')];
+        const size = (l) => parseInt((l.getAttribute("sizes") || "0").split("x")[0], 10) || (/\.svg(\?|$)/i.test(l.href) ? 64 : 16);
+        links.sort((a, b) => Math.abs(size(a) - 32) - Math.abs(size(b) - 32));
+        href = links.length ? links[0].href : /^https?:$/.test(location.protocol) ? location.origin + "/favicon.ico" : "";
+      } catch (_) {}
+      if (!href) return letter();
+      const img = document.createElement("img");
+      img.alt = "";
+      img.referrerPolicy = "no-referrer";
+      img.onerror = () => {
+        img.remove();
+        letter();
+      };
+      img.src = href;
+      box.appendChild(img);
     }
 
     destroy(quick) {

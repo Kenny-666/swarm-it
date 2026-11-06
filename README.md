@@ -31,6 +31,8 @@ Everything appears in place on the real page, so the result is always exactly th
 | **Sound** / **M** | Turn the build's sound on or off |
 | **Esc** / **✕** | Exit (the page is restored exactly) |
 
+The toolbar shows **Live agents**: the site's favicon in black and white, the initials of the agents on screen in their cursor colours (they trade places as they work), and how many are working. More agents come in for a busy section, and idle ones leave.
+
 Turn the tour off to scroll yourself: the swarm builds whatever comes to rest on screen. With *prefers-reduced-motion* it builds at 3× with a smaller swarm, and the tour jumps instead of gliding.
 
 ## How it works

@@ -39,6 +39,7 @@ Everything appears in place on the real page, in the site's own colours and font
 
 Made for recording:
 • Auto-tour is on from the start: the page scrolls in one smooth glide as it's built, slowing for each section and speeding up once it's done (T turns it off so you can scroll yourself)
+• The toolbar shows the live crew: the site's icon, the avatars of the agents at work and how many there are, rising and falling with each section
 • Choose 1×, 2× or 3× speed, or press Finish to show the whole page at once
 • Press H to hide the controls for a clean take, or drag the control bar anywhere
 • A soft, generated soundtrack plays along (M turns it off)
