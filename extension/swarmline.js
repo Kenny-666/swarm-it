@@ -1316,8 +1316,10 @@ canvas.off{pointer-events:none}
         for (const c of P.children) {
           const us = unitsIn.get(c);
           if (!us || !us.length || this.roleOf.has(c)) continue;
-          // a single long paragraph reads better typed than duplicated
-          if (us.length === 1 && us[0].kind === "text" && c.textContent.trim().length > 40) continue;
+          // a lone line of text is typed, not duplicated, unless it's a short item in a row
+          // (nav links, tags): headings, sentences and stacked lines are typed letter by letter
+          const lone = us.length === 1 && us[0].kind === "text";
+          if (lone && (c.textContent.trim().length > 24 || (us[0].fs || 16) >= 22)) continue;
           const r = c.getBoundingClientRect();
           if (r.width < 14 || r.height < 12 || r.height > v.h * 0.8 || r.width > v.w * 0.96) continue;
           if (getComputedStyle(c).translate !== "none") continue;
@@ -1336,13 +1338,15 @@ canvas.off{pointer-events:none}
           if (!g) {
             if (found.length < 2) continue;
             const m = found[0];
-            g = { master: m.c, masterUnits: m.us, mw: m.r.width, mh: m.r.height, copies: [], loose: m.loose };
+            if (m.loose && !found.slice(1).some((k) => Math.abs(k.r.top - m.r.top) < 6)) continue; // a column of lines: typed
+            g = { master: m.c, masterUnits: m.us, mw: m.r.width, mh: m.r.height, mTop: m.r.top, copies: [], loose: m.loose };
             known.set(sig, g);
             this.roleOf.set(m.c, "master");
             rest = found.slice(1);
           }
           for (const k of rest) {
             if (ratio(k.r.height, g.mh) >= 1.8 || (!g.loose && ratio(k.r.width, g.mw) >= 1.6)) continue;
+            if (g.loose && Math.abs(k.r.top - g.mTop) > 6) continue;
             if (k.us.some((u) => u.state !== 0)) continue;
             this.makeDup(g, k, v, top);
           }
@@ -1834,6 +1838,7 @@ canvas.off{pointer-events:none}
       }
 
       this.stepReveals(dt);
+      this.stepGrid(dt, top, v);
       if (this.jump) {
         const J = this.jump;
         J.t += dt;
@@ -1867,7 +1872,7 @@ canvas.off{pointer-events:none}
         if (y + w.h > v.y) avail++;
       }
       this.avail = avail;
-      const slots = Math.min(this.nibs.length, 8 + Math.floor(avail / 2) + Math.floor(this.speedPx / 40));
+      const slots = Math.min(this.nibs.length, 5 + Math.floor(avail / 4) + Math.floor(this.speedPx / 40));
       let busy = 0;
       for (const u of this.active) if (!(u.kind === "box" && u.phase >= 1)) busy++;
       let started = 0;
@@ -1928,7 +1933,9 @@ canvas.off{pointer-events:none}
           if (u.kind === "text") {
             u.edit = !!u.inCopy && !!u.inCopy.src && !u.dupSame; // only a real copy is edited
             u.jx = rand(-5, 5);
-            u.grow = !u.edit && u.mode !== "fade" && u.fs >= 28 && u.h < 400;
+            // big display type is typed at full size, letter by letter; now and then a mid-size
+            // heading is typed small and then scaled up into place
+            u.grow = !u.edit && u.mode !== "fade" && u.fs >= 28 && u.fs < 48 && u.h < 400 && Math.random() < 0.3;
           }
           if (u.kind === "dup") {
             const S = u.src.getBoundingClientRect();
@@ -2216,10 +2223,13 @@ canvas.off{pointer-events:none}
         return;
       }
       if (u.step === 3) {
-        // an uneven human rhythm, quicker on long passages
+        // an uneven human rhythm, quicker on long passages; on its own clock (not the swarm's
+        // tempo), and big type slow enough to watch every letter arrive
         const N = u.total;
-        const k = clamp(70 / Math.max(1, N), 0.06, 1);
-        u.budget = (u.budget || 0) + T;
+        const fsz = u.fs || 16;
+        const size = fsz >= 34 ? 3.2 : fsz >= 24 ? 2.2 : fsz >= 18 ? 1.4 : 1;
+        const k = clamp(70 / Math.max(1, N), 0.06, 1) * size;
+        u.budget = (u.budget || 0) + dt * this.speed * 1.9;
         let i = Math.floor(u.typed);
         const i0 = i;
         while (i < N && u.budget > 0) {
@@ -2852,7 +2862,7 @@ canvas.off{pointer-events:none}
       for (const n of this.nibs) n.vis = this.time < n.born ? 0 : Math.min(1, n.vis + dt / 0.3);
       const here = this.present();
       // the swarm works faster when there's a lot to do or the reader is moving
-      this.tempo = clamp(2.1 + this.speedPx / 900 + (this.avail / Math.max(1, here.length)) * 0.5, 2.1, 4.5) * this.speed;
+      this.tempo = clamp(1.4 + this.speedPx / 900 + (this.avail / Math.max(1, here.length)) * 0.35, 1.4, 3) * this.speed;
 
       // before the build and after it: everyone orbits (after: around your pointer)
       if (this.intro < 1 || this.outro) {
@@ -2877,7 +2887,7 @@ canvas.off{pointer-events:none}
       // bring in more hands when work piles up
       this.spawnT -= dt;
       const busy = here.filter((n) => n.unit).length;
-      const want = clamp(8 + Math.floor(this.speedPx / 40) + Math.floor(this.avail / 2), 8, this.nibs.length);
+      const want = clamp(7 + Math.floor(this.speedPx / 40) + Math.floor(this.avail / 3), 7, this.nibs.length);
       if (here.length < want && this.avail > here.length - busy && this.spawnT <= 0) {
         const out = this.nibs.find((n) => n.away);
         if (out) {
@@ -3105,6 +3115,7 @@ canvas.off{pointer-events:none}
         const R = rects.get(u);
         if (R) this.mark(g, u, R);
       }
+      this.drawGrid(g, v);
       this.drawGuides(g, v, top);
       this.drawRulers(g, v, top);
       const sheetA = this.intro < 1 ? clamp((this.intro - 0.3) / 0.5, 0, 1) : 1;
@@ -3357,9 +3368,12 @@ canvas.off{pointer-events:none}
         if (u.phase === 0) {
           // the shape being drawn, before the real one fills in
           g.save();
-          g.fillStyle = this.dark ? "rgba(255,255,255,0.08)" : "rgba(20,24,40,0.06)";
-          g.fillRect(x, y, dw, dh);
-          if (u.kind === "media" && u.step >= 3 && w > 28 && h > 28) this.cross(g, x, y, w, h, 0.3);
+          // a big background frame stays see-through, so what is already built on top still shows
+          if (u.kind === "media" && u.step >= 3) this.placeholder(g, x, y, w, h, w * h > this.W * this.H * 0.12 ? 0.4 : 0.94);
+          else {
+            g.fillStyle = this.dark ? "rgba(255,255,255,0.08)" : "rgba(20,24,40,0.06)";
+            g.fillRect(x, y, dw, dh);
+          }
           g.restore();
         }
         this.sel(g, x, y, dw, dh, INK, true, true);
@@ -3432,18 +3446,96 @@ canvas.off{pointer-events:none}
       this.badge(g, String(gap), horiz ? (p0[0] + p1[0]) / 2 : p0[0] + 18, horiz ? p0[1] + 8 : (p0[1] + p1[1]) / 2 - 9, MEASURE);
     }
 
-    // an image placeholder's diagonals
-    cross(g, x, y, w, h, a) {
+    // an image placeholder: a light frame with a small picture icon in the middle
+    placeholder(g, x, y, w, h, a) {
       g.save();
       g.globalAlpha = a;
-      g.strokeStyle = INK;
+      g.fillStyle = this.dark ? "#F4F4F1" : "#EEF0F4";
+      g.fillRect(x, y, w, h);
+      if (w > 40 && h > 32) {
+        const s = clamp(Math.min(w, h) * 0.14, 12, 22);
+        const cx = x + w / 2;
+        const cy = y + h / 2;
+        const r = s * 0.14;
+        g.strokeStyle = "#A3A8B6";
+        g.fillStyle = "#A3A8B6";
+        g.lineWidth = Math.max(1.2, s / 12);
+        g.lineJoin = "round";
+        this.roundPath(g, cx - s / 2, cy - s * 0.4, s, s * 0.8, [r, r, r, r]);
+        g.stroke();
+        g.beginPath(); // the hills
+        g.moveTo(cx - s * 0.38, cy + s * 0.28);
+        g.lineTo(cx - s * 0.1, cy - s * 0.04);
+        g.lineTo(cx + s * 0.1, cy + s * 0.14);
+        g.lineTo(cx + s * 0.22, cy + s * 0.04);
+        g.lineTo(cx + s * 0.38, cy + s * 0.28);
+        g.stroke();
+        g.beginPath(); // the sun
+        g.arc(cx + s * 0.18, cy - s * 0.17, s * 0.07, 0, TAU);
+        g.fill();
+      }
+      g.restore();
+    }
+
+    // The layout grid of the screen being built: the content area found from the pieces on
+    // screen, split into twelve columns, fading in while there's work and out when it's done.
+    stepGrid(dt, top, v) {
+      const G = this.grid || (this.grid = { a: 0, l: 0, r: 0, tl: 0, tr: 0, t: 0, work: 0, ok: false });
+      G.t -= dt;
+      if (G.t <= 0) {
+        G.t = 0.5;
+        const ls = [];
+        const rs = [];
+        let work = 0;
+        for (const u of this.units) {
+          if (u.fixed || u.kind === "guide" || u.kind === "dup" || !u.w || u.w >= v.w * 0.9 || u.w < 8) continue;
+          if (u.y > top + v.h || u.y + u.h < top) continue;
+          ls.push(u.left0);
+          rs.push(u.left0 + u.w);
+          if (u.state !== 2) work++;
+        }
+        G.work = work;
+        if (ls.length >= 6) {
+          ls.sort((a, b) => a - b);
+          rs.sort((a, b) => a - b);
+          const l = ls[Math.floor(ls.length * 0.08)] - v.x;
+          const r = rs[Math.ceil(rs.length * 0.92) - 1] - v.x;
+          if (r - l > v.w * 0.35) {
+            if (!G.ok) {
+              G.l = l;
+              G.r = r;
+            }
+            G.tl = l;
+            G.tr = r;
+            G.ok = true;
+          }
+        }
+      }
+      if (G.ok) {
+        const k = 1 - Math.exp(-dt * 3);
+        G.l += (G.tl - G.l) * k;
+        G.r += (G.tr - G.r) * k;
+      }
+      const want = G.ok && G.work > 2 && !this.outro && this.intro >= 1 ? 1 : 0;
+      G.a += (want - G.a) * (1 - Math.exp(-dt * (want ? 2.5 : 1.6)));
+    }
+    drawGrid(g, v) {
+      const G = this.grid;
+      if (!G || !G.ok || G.a < 0.02) return;
+      const cols = 12;
+      const w = (G.r - G.l) / cols;
+      const ink = this.dark ? "255,255,255" : "47,107,255";
+      g.save();
       g.lineWidth = 1;
-      g.beginPath();
-      g.moveTo(x, y);
-      g.lineTo(x + w, y + h);
-      g.moveTo(x + w, y);
-      g.lineTo(x, y + h);
-      g.stroke();
+      for (let i = 0; i <= cols; i++) {
+        const x = Math.round(v.x + G.l + w * i) + 0.5;
+        const edge = i === 0 || i === cols;
+        g.strokeStyle = "rgba(" + ink + "," + ((edge ? (this.dark ? 0.3 : 0.24) : this.dark ? 0.13 : 0.11) * G.a).toFixed(3) + ")";
+        g.beginPath();
+        g.moveTo(x, v.y);
+        g.lineTo(x, v.y + v.h);
+        g.stroke();
+      }
       g.restore();
     }
 

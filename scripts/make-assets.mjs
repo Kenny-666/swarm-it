@@ -110,7 +110,7 @@ try {
     await sleep(300);
     return file;
   };
-  const draw = await capture("draw", null, "(a) => a.done >= 70 && a.active.filter((u) => u.step === 2 && (u.kind === 'box' || u.kind === 'media')).length >= 2");
+  const draw = await capture("draw", null, "(a) => a.done >= 40 && a.active.filter((u) => u.step === 2 && (u.kind === 'box' || u.kind === 'media')).length >= 2");
   const dup = await capture("duplicate", null, "(a) => a.active.some((u) => u.kind === 'dup' && u.step === 3 && u.el.classList.contains('kpi') && u.lead && u.lead.mv && u.lead.mv.t > u.lead.mv.dur * 0.5)");
   const edit = await capture("edit", null, "(a) => a.active.some((u) => u.kind === 'text' && u.edit && u.step === 11 && u.inCopy && u.inCopy.el.classList.contains('kpi'))");
   const snap = await capture("snap", null, "(a) => a.active.some((u) => u.kind === 'text' && u.step === 21)");
