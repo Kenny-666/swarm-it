@@ -38,7 +38,7 @@ How the swarm builds a page:
 Everything appears in place on the real page, in the site's own colours and fonts, so the finished page is exactly the live site, with its animations, video and links all working.
 
 Made for recording:
-• Auto-tour is on from the start: the page glides along screen by screen as it's built (T turns it off so you can scroll yourself)
+• Auto-tour is on from the start: the page scrolls in one smooth glide as it's built, slowing for each section and speeding up once it's done (T turns it off so you can scroll yourself)
 • Choose 1×, 2× or 3× speed, or press Finish to show the whole page at once
 • Press H to hide the controls for a clean take, or drag the control bar anywhere
 • A soft, generated soundtrack plays along (M turns it off)

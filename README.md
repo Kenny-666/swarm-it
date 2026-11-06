@@ -23,7 +23,7 @@ Everything appears in place on the real page, so the result is always exactly th
 | | |
 | --- | --- |
 | **Alt+Shift+L** or the toolbar button | Start (again to stop) |
-| **Auto-tour** / **T** | Glide through the page screen by screen (on by default; T turns it off) |
+| **Auto-tour** / **T** | Scroll down the page in one continuous glide: slow while a section is being built, faster once it's done (on by default; T turns it off) |
 | **1× / 2× / 3×** | Build speed |
 | **Finish** / **F** | Show the finished page now |
 | **H** / eye button | Hide the controls for a clean screen recording (H brings them back) |
@@ -41,7 +41,7 @@ Turn the tour off to scroll yourself: the swarm builds whatever comes to rest on
 2. **Scan.** When the page comes to rest, the visible part of the DOM (including open shadow roots) is read into *units*: boxes (anything that paints a background, border or shadow), text blocks (their real line boxes and letter positions), media, form controls and icon glyphs. Repeated siblings (cards, rows, links, icons) are grouped for duplicating, and text that lines up gets an alignment guide.
 3. **Build.** Each unit is made by one cursor, step by step, at a tempo that rises with the backlog: boxes are dragged out with a crosshair, text is typed by clipping the real element to the letters written so far (`clip-path: path(…)`), dividers are drawn with the pen tool, image frames are dragged out and the picture scans in. Guides are pulled from the rulers and text is dragged onto them until it snaps. Copies of a finished component are Alt-dragged into place as a look-alike, then the real copy takes over and whatever differs is selected and retyped or swapped. A child waits for the box it sits in.
 4. **Sweep.** When everything on screen is built, anything still hidden there (wrapper backgrounds, decoration) comes in top to bottom behind a light line.
-5. **Tour and finish.** Auto-tour eases to the next screen once the page is still. At the end the stylesheet and markers are removed, the page is fully interactive again, the swarm orbits your mouse pointer, and the toolbar offers **Replay**.
+5. **Tour and finish.** Auto-tour never stops and starts. It reads the page a couple of screens ahead and keeps the camera moving: it creeps while there's work on screen, never leaves an unfinished piece behind, and speeds up once a section is done. Scroll the wheel yourself and it waits a moment, then carries on from where you are. At the end the stylesheet and markers are removed, the page is fully interactive again, the swarm orbits your mouse pointer, and the toolbar offers **Replay**.
 
 The cursors, selections, rulers and guides are drawn on a transparent `<canvas>` in a closed shadow root above the page. Exiting at any point (or any error) removes everything Swarmline added and puts the page back exactly as it was.
 

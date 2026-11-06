@@ -41,10 +41,16 @@
     "option", "optgroup", "datalist", "source", "track", "param", "area", "map", "swarmline-layer",
   ]);
   const MEDIA = new Set(["img", "svg", "video", "canvas", "picture", "iframe", "embed", "object"]);
-  const LIVE_MEDIA = new Set(["video", "canvas", "iframe", "embed", "object"]); // revealed by fading, never clipped
+  const LIVE_MEDIA = new Set(["video", "canvas", "iframe", "embed", "object"]); // shown without animation (see Stage.live)
   const CONTROL = new Set(["input", "textarea", "select"]);
 
   const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
+  // is `el`, or something it sits inside, in the set?
+  const within = (el, set) => {
+    if (!set || !set.size) return false;
+    for (let e = el; e && e !== document.body; e = e.parentElement) if (set.has(e)) return true;
+    return false;
+  };
   const TAU = Math.PI * 2;
   const easeOut = (t) => 1 - Math.pow(1 - t, 3);
   const easeInOut = (t) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
@@ -137,6 +143,7 @@
   class Stage {
     constructor() {
       this.marked = [];
+      this.fading = new WeakSet(); // fading in by our hand: its opacity is ours, not the page's
       this.clips = new Map();
       this.style = document.createElement("style");
       this.style.setAttribute("data-swarmline", "");
@@ -167,11 +174,32 @@
     shown(el) {
       return !!el && el.hasAttribute(SHOWN);
     }
+    // is this a video, canvas or embed, or does it hold one? Animating such an element's
+    // opacity or clip while the page scrolls can lock up Chrome's renderer, so it's shown
+    // without animation. (The set of their ancestors is rebuilt at most once a second.)
+    live(el) {
+      const now = performance.now();
+      if (!this.liveSet || now - this.liveAt > 1000) {
+        this.liveAt = now;
+        this.liveSet = new Set();
+        for (const m of document.querySelectorAll("video,canvas,iframe,embed,object")) {
+          if (m.closest(`[${GHOST}]`)) continue;
+          for (let e = m; e && e !== document.body; e = e.parentElement) {
+            if (this.liveSet.has(e)) break;
+            this.liveSet.add(e);
+          }
+        }
+      }
+      return this.liveSet.has(el) || LIVE_MEDIA.has(el.localName);
+    }
     fadeIn(el, ms, from = 0) {
       if (!this.show(el)) return;
+      if (this.live(el)) return;
       try {
         // the end value is left implicit (the element's own opacity): no style read per fade
-        el.animate([{ opacity: from }, {}], { duration: ms, easing: "cubic-bezier(.2,.7,.2,1)" });
+        const a = el.animate([{ opacity: from }, {}], { duration: ms, easing: "cubic-bezier(.2,.7,.2,1)" });
+        this.fading.add(el);
+        a.onfinish = a.oncancel = () => this.fading.delete(el);
       } catch (_) {}
     }
     // text typed in place: clip the element to the letters written so far
@@ -350,7 +378,7 @@
           for (const k of el.children) visit(k, parent, fixed, under, inFlow);
           return;
         }
-        if (parseFloat(s.opacity) < 0.04) return;
+        if (parseFloat(s.opacity) < 0.04 && !this.stage.fading.has(el)) return;
         const isFixed = fixed || s.position === "fixed" || s.position === "sticky" || !env.owns(el);
         const r = el.getBoundingClientRect();
         let inBand = true;
@@ -449,15 +477,35 @@
 
     // Everything still hidden on screen (decoration, wrappers, anything that isn't a
     // unit of its own), top to bottom, for the end-of-screen sweep.
-    leftovers(vTop, vBottom) {
+    // `keep` holds the elements of pieces still to be built: they (and what's inside them)
+    // stay hidden, so the sweep never gives away a piece the swarm hasn't drawn yet.
+    leftovers(vTop, vBottom, keep) {
       return this.stage.peek(() => {
         const out = [];
         const all = document.body ? document.body.getElementsByTagName("*") : [];
+        // faded out by the page itself (scroll-reveal, a header that appears later): not
+        // decoration, just not there yet; the swarm builds it once it shows
+        const faint = new Map();
+        const isFaint = (el) => {
+          if (!el || el === document.body) return false;
+          let f = faint.get(el);
+          if (f === undefined) {
+            f = (parseFloat(getComputedStyle(el).opacity) < 0.04 && !this.stage.fading.has(el)) || isFaint(el.parentElement);
+            faint.set(el, f);
+          }
+          return f;
+        };
         for (let i = 0; i < all.length && out.length < 4000; i++) {
           const el = all[i];
           if (el === this.host || SKIP.has(el.localName) || this.stage.shown(el) || el.closest(`[${GHOST}]`)) continue;
+          if (keep && keep.size && within(el, keep)) continue;
           const r = el.getBoundingClientRect();
+          // no box (display:none, an image still loading): nothing to sweep in yet
+          if (r.width < 1 || r.height < 1) continue;
           if (r.bottom < vTop || r.top > vBottom) continue;
+          // hidden by the page itself (a closed menu, a dialog): showing it would force it
+          // open, since a shown element is made visible over the page's own styles
+          if (getComputedStyle(el).visibility !== "visible" || isFaint(el)) continue;
           out.push({ el, y: r.top });
         }
         return out.sort((a, b) => a.y - b.y);
@@ -905,6 +953,7 @@ canvas.off{pointer-events:none}
       this.bands = []; // finished rows of the page, content px
       this.scanned = [];
       this.sweep = null;
+      this.reveals = [];
       this.jump = null;
       this.frontier = -Infinity;
       this.done = 0;
@@ -1039,11 +1088,15 @@ canvas.off{pointer-events:none}
       }, { passive: true, capture: true });
       on(window, "wheel", () => {
         if (this.jump) this.jump = null; // the reader took over
+        this.userHold = this.time + 2.5; // the camera waits for them, then glides on
+        this.cruise = 0;
       }, { passive: true });
       if (this.env.el) {
         on(this.cv, "wheel", (e) => {
           e.preventDefault();
           this.jump = null;
+          this.userHold = this.time + 2.5;
+          this.cruise = 0;
           this.env.el.scrollBy({ top: e.deltaY, left: e.deltaX, behavior: "instant" });
         }, { passive: false });
       }
@@ -1167,6 +1220,14 @@ canvas.off{pointer-events:none}
       }
       return out;
     }
+    // the elements of every piece not yet built (waiting, or under way); the set is live:
+    // pieces registered later add themselves through register()
+    unbuilt() {
+      const keep = new Set();
+      for (const u of this.waiting) if (u.state === 0 && u.el && u.kind !== "guide") keep.add(u.el);
+      for (const u of this.active) if (u.el && u.kind !== "guide") keep.add(u.el);
+      return keep;
+    }
     scannedCovers(a, b) {
       for (const k of this.scanned) if (k.top <= a + 1 && k.bottom >= b - 1) return true;
       return false;
@@ -1180,7 +1241,10 @@ canvas.off{pointer-events:none}
         this.units.push(u);
         // already on the page (an earlier sweep put it back): nothing to build
         if (this.stage.shown(u.el)) this.complete(u, true);
-        else this.waiting.push(u);
+        else {
+          this.waiting.push(u);
+          if (this.sweep && this.sweep.keep && u.el) this.sweep.keep.add(u.el);
+        }
       }
       try {
         this.findRepeats(fresh);
@@ -1724,7 +1788,10 @@ canvas.off{pointer-events:none}
 
       const moved = this.lastTop == null ? 0 : Math.abs(top - this.lastTop);
       this.lastTop = top;
-      const inst = this.jump ? 0 : moved / Math.max(dt, 0.001);
+      // the tour's own camera movement doesn't count as the reader scrolling
+      const own = this.ownMove || 0;
+      this.ownMove = 0;
+      const inst = this.jump ? 0 : Math.max(0, moved - own - 0.5) / Math.max(dt, 0.001);
       this.speedPx += (inst - this.speedPx) * (1 - Math.exp(-dt / 0.12));
       const resting = !this.jump && this.speedPx < 45;
       this.restFor = resting ? this.restFor + dt : 0;
@@ -1750,6 +1817,7 @@ canvas.off{pointer-events:none}
         return;
       }
 
+      this.stepReveals(dt);
       if (this.jump) {
         const J = this.jump;
         J.t += dt;
@@ -1758,14 +1826,20 @@ canvas.off{pointer-events:none}
         if (k >= 1) this.jump = null;
       }
 
-      if (this.restFor > 0.12 && (this.scanTop !== Math.round(top) || this.scanH !== env.height)) {
+      // read the page ahead of the camera: two screens' worth at a time, so content is ready
+      // before it rises into view; rescan where the page settles (lazy content appears late)
+      const ahead = (this.cruise || 0) > 0 && !this.scannedCovers(top - v.h * 0.05, top + v.h * 1.2);
+      // while the camera glides, "settled" means every quarter screen, not every pixel
+      const drift = Math.abs((this.scanTop == null ? -1e9 : this.scanTop) - top);
+      const settled = this.restFor > 0.12 && ((this.cruise || 0) > 0 ? drift > v.h * 0.25 : drift >= 1 || this.scanH !== env.height);
+      if (ahead || settled) {
         this.scanTop = Math.round(top);
         this.scanH = env.height;
-        const band = { top: top - v.h * 0.1, bottom: top + v.h * 1.1 };
+        const band = { top: top - v.h * 0.1, bottom: top + v.h * (ahead ? 2.2 : 1.1) };
         this.register(this.scanner.scan(band));
         this.scanned = this.addBand(this.scanned, band.top, band.bottom);
-        this.frontier = Math.max(this.frontier, top + v.h);
       }
+      if (this.scannedCovers(top, top + v.h)) this.frontier = Math.max(this.frontier, top + v.h);
 
       // start work in reading order, a crew at a time
       // how much is waiting on screen (drives the tempo and how many hands come in)
@@ -1903,15 +1977,15 @@ canvas.off{pointer-events:none}
       if (this.sweep) {
         const s = this.sweep;
         s.p = Math.min(1, s.p + sdt / s.dur);
-        const edge = s.vTop + (s.vBottom - s.vTop) * easeInOut(s.p) + 60;
+        const edge = s.vTop + (s.vBottom - s.vTop) * easeInOut(s.p) + 60; // in the coordinates it started in
         while (s.i < s.items.length && s.items[s.i].y <= edge) {
           const it = s.items[s.i++];
-          if (st.shown(it.el)) continue;
+          if (st.shown(it.el) || within(it.el, s.keep)) continue;
           if (it.el.querySelector(`[${SHOWN}]`)) st.show(it.el); // has built content inside: no fade
           else st.fadeIn(it.el, 300);
         }
         if (s.p >= 1) {
-          for (; s.i < s.items.length; s.i++) st.show(s.items[s.i].el);
+          for (; s.i < s.items.length; s.i++) if (!within(s.items[s.i].el, s.keep)) st.show(s.items[s.i].el);
           this.bands = this.addBand(this.bands, s.top, s.bottom);
           this.sweep = null;
         }
@@ -1920,36 +1994,111 @@ canvas.off{pointer-events:none}
         const vb = Math.min(env.height, top + v.h);
         const gap = this.gapIn(vt, vb);
         if (gap && this.scannedCovers(vt, vb)) {
-          const pending = this.waiting.some((u) => !u.fixed && u.y < gap.bottom && u.y + u.h > gap.top && u.y >= vt - 2) ||
-            this.active.some((u) => !(u.kind === "box" && u.phase >= 1));
-          if (!pending) {
+          // everything above the first unfinished piece is done: sweep that part in
+          let first = gap.bottom;
+          for (const u of this.waiting) {
+            if (u.state !== 0 || u.fixed) continue;
+            if (u.y >= gap.bottom) break;
+            if (u.y + u.h > gap.top && u.y >= vt - 2) first = Math.min(first, u.y);
+          }
+          for (const u of this.active) {
+            if (u.fixed || u.kind === "guide" || (u.kind === "box" && u.phase >= 1)) continue;
+            if (u.y + u.h > gap.top && u.y < gap.bottom) first = Math.min(first, u.y);
+          }
+          const bottom = Math.min(first, gap.bottom);
+          if (bottom >= gap.bottom - 1 || bottom - gap.top >= 120) {
             const sTop = gap.top - top + v.y;
-            const sBottom = gap.bottom - top + v.y;
-            const items = this.scanner.leftovers(Math.max(0, sTop - 2), sBottom + 2);
-            this.sweep = { top: gap.top, bottom: gap.bottom, vTop: sTop, vBottom: sBottom, p: 0, i: 0, items, dur: items.length ? 0.6 : 0.2 };
+            const sBottom = bottom - top + v.y;
+            const keep = this.unbuilt();
+            const items = this.scanner.leftovers(Math.max(0, sTop - 2), sBottom + 2, keep);
+            this.sweep = { top: gap.top, bottom, vTop: sTop, vBottom: sBottom, top0: top, p: 0, i: 0, items, keep, dur: items.length ? 0.6 : 0.2 };
           }
         }
       }
 
-      // tour: next screen, or the end
+      // tour: the end, or keep the camera moving
       const viewDone = !this.sweep && !this.gapIn(top, Math.min(env.height, top + v.h));
-      if (viewDone && !this.jump) {
-        const atEnd = top >= env.maxTop() - 1;
-        if (atEnd && this.covered(0, env.height)) {
-          this.dwell += dt;
-          if (this.dwell > 0.5) this.finish();
-        } else if (this.tour && resting) {
-          // a finished screen hands straight over to the next one
+      const atEnd = top >= env.maxTop() - 1;
+      if (viewDone && !this.jump && atEnd && this.covered(0, env.height)) {
+        this.cruise = 0;
+        this.dwell += dt;
+        if (this.dwell > 0.5) this.finish();
+        return;
+      }
+      if (!this.tour || this.jump || this.time < (this.userHold || 0)) {
+        this.cruise = 0;
+        this.dwell = 0;
+        return;
+      }
+      if (reduced() || atEnd) {
+        // reduced motion: screen by screen; at the bottom: back to anything skipped above
+        this.cruise = 0;
+        if (viewDone && resting) {
           this.dwell += dt * this.speed;
           if (this.dwell > 0.12) {
             this.dwell = 0;
             const gap = atEnd ? this.gapIn(0, env.height) : null;
             const to = gap ? clamp(gap.top, 0, env.maxTop()) : Math.min(env.maxTop(), top + v.h * 0.82);
-            if (reduced()) env.scrollTo(to);
-            else this.jump = { from: top, to, t: 0, dur: clamp(0.4 + (to - top) / 2600, 0.5, 1.1) / Math.sqrt(this.speed) };
+            if (to !== top) {
+              if (reduced()) env.scrollTo(to);
+              else this.jump = { from: top, to, t: 0, dur: clamp(0.4 + Math.abs(to - top) / 2600, 0.5, 1.1) / Math.sqrt(this.speed) };
+            }
           }
         } else this.dwell = 0;
-      } else this.dwell = 0;
+        return;
+      }
+      this.dwell = 0;
+      this.cruiseStep(dt, top, v, viewDone);
+    }
+
+    // The camera glides on continuously: it creeps while there's work on screen (so the page
+    // is built as it rises), never leaves unfinished work behind, and hurries on once the
+    // screen is done. Its speed is eased, so it never stops and starts with a jolt.
+    cruiseStep(dt, top, v, viewDone) {
+      const env = this.env;
+      // what is still to be built on screen, and how much of it is in the part you're reading
+      let pending = 0;
+      let upper = 0;
+      let first = Infinity;
+      const mid = top + v.h * 0.6;
+      const count = (u) => {
+        pending++;
+        if (u.y < mid) upper++;
+        first = Math.min(first, u.y);
+      };
+      for (const u of this.waiting) {
+        if (u.state !== 0 || u.fixed) continue;
+        if (u.y > top + v.h) break;
+        if (u.y + u.h > top) count(u);
+      }
+      for (const u of this.active) {
+        if (u.fixed || u.kind === "guide" || (u.kind === "box" && u.phase >= 1)) continue;
+        if (u.y + u.h > top && u.y < top + v.h) count(u);
+      }
+      const sp = Math.sqrt(this.speed);
+      let want;
+      if (!pending && viewDone) want = 1150 * sp; // the whole screen is finished: on to the next, quickly
+      else if (!upper) want = 620 * sp; // the section you're reading is done: hurry the next one up
+      else want = clamp(150 - upper * 6, 34, 150) * sp; // building here: creep, so it's built as it rises
+      const c = this.cruise || 0;
+      this.cruise = c + (want - c) * (1 - Math.exp(-dt * (want > c ? 1.4 : 3.2)));
+      // never leave unfinished work behind: a hard limit that shrinks as the first unfinished
+      // piece nears the top, so the camera brakes in time (smoothly: the limit falls off gradually)
+      if (first < Infinity) this.cruise = Math.min(this.cruise, Math.max(0, (first - top - v.h * 0.2) * 2.2));
+      if (this.cruise < 1.5 && want < 1.5) this.cruise = 0;
+      // a float camera, so slow speeds don't stall on whole pixels
+      if (this.camY == null || Math.abs(this.camY - top) > 3) this.camY = top;
+      if (!this.cruise) return;
+      const max = env.maxTop();
+      const next = Math.min(max, this.camY + this.cruise * dt);
+      if (next <= this.camY) return;
+      // the camera keeps its fraction, the page scrolls in whole pixels: fractional scroll
+      // offsets every frame can wedge the compositor on heavy pages (WebGL, video)
+      this.camY = next;
+      const y = Math.round(next);
+      if (y === Math.round(top)) return;
+      this.ownMove = Math.abs(y - top);
+      env.scrollTo(y);
     }
 
     // ---- how each kind of piece is made (steps run at the swarm's tempo)
@@ -2295,17 +2444,32 @@ canvas.off{pointer-events:none}
 
     scanIn(u) {
       try {
-        // live media (video, canvas, embeds) fade in instead: a clip-path animation on a
-        // WebGL canvas or a playing video can lock up Chrome's renderer
-        if (LIVE_MEDIA.has(u.el.localName) || u.el.querySelector("video,canvas,iframe,embed,object")) {
-          u.el.animate([{ opacity: 0 }, {}], { duration: 520 / this.speed, easing: "ease-out" });
-          return;
-        }
-        const kf = u.kind === "control"
-          ? [{ clipPath: "inset(0 100% 0 0)" }, { clipPath: "inset(0 0 0 0)" }]
-          : [{ clipPath: "inset(0 0 100% 0)", opacity: 0.6 }, { clipPath: "inset(0 0 0 0)", opacity: 1 }];
-        u.el.animate(kf, { duration: (u.kind === "media" ? 620 : 360) / this.speed, easing: "cubic-bezier(.65,0,.35,1)" });
+        // live media (video, canvas, embeds) simply appears: animating its clip or opacity
+        // can lock up Chrome's renderer (a WebGL canvas, a playing video under a scroll)
+        if (this.stage.live(u.el)) return;
+        // the wipe is stepped from our own frame loop, not a clip-path animation: Chrome runs
+        // those on the compositor, and one under a page scrolling every frame can wedge it
+        const side = u.kind === "control";
+        this.reveals.push({ el: u.el, side, t: 0, dur: (u.kind === "media" ? 620 : 360) / 1000 / this.speed });
+        this.stage.clip(u.el, side ? "inset(0 100% 0 0)" : "inset(0 0 100% 0)");
+        if (!side) u.el.animate([{ opacity: 0.6 }, {}], { duration: 620 / this.speed, easing: "ease-out" });
       } catch (_) {}
+    }
+    stepReveals(dt) {
+      if (!this.reveals.length) return;
+      let n = 0;
+      for (const r of this.reveals) {
+        r.t += dt;
+        const k = Math.min(1, r.t / r.dur);
+        if (k >= 1 || !r.el.isConnected) {
+          this.stage.unclip(r.el);
+          continue;
+        }
+        const left = ((1 - easeInOut(k)) * 100).toFixed(2) + "%";
+        this.stage.clip(r.el, r.side ? `inset(0 ${left} 0 0)` : `inset(0 0 ${left} 0)`);
+        this.reveals[n++] = r;
+      }
+      this.reveals.length = n;
     }
 
     finish() {
@@ -2326,7 +2490,7 @@ canvas.off{pointer-events:none}
       for (const el of leftover.slice(0, 600)) {
         try {
           const r = el.getBoundingClientRect();
-          if (r.bottom > 0 && r.top < innerHeight && !el.firstElementChild) el.animate([{ opacity: 0 }, {}], { duration: 450 });
+          if (r.bottom > 0 && r.top < innerHeight && !el.firstElementChild && !LIVE_MEDIA.has(el.localName)) el.animate([{ opacity: 0 }, {}], { duration: 450 });
         } catch (_) {}
       }
       this.$('[data-a="tour"]').hidden = true;
@@ -2929,7 +3093,7 @@ canvas.off{pointer-events:none}
       this.drawRulers(g, v, top);
       if (this.sweep) {
         const s = this.sweep;
-        const e = s.vTop + (s.vBottom - s.vTop) * easeInOut(s.p);
+        const e = s.vTop + (s.vBottom - s.vTop) * easeInOut(s.p) - (top - (s.top0 == null ? top : s.top0));
         const line = this.dark ? "255,255,255" : "40,40,60";
         const gl = g.createLinearGradient(0, e - 34, 0, e + 2);
         gl.addColorStop(0, `rgba(${line},0)`);
