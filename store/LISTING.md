@@ -54,7 +54,7 @@ Private by design: Swarmline runs only on the tab you start it on, sends nothing
 
 Shortcuts: Alt+Shift+L start or stop · T auto-tour · F finish · M sound · H hide or show the controls · Esc exit.
 
-Credits: the cursor motion and build style follow Swarm Rebuild by Dhvanil Patel, a tribute to Swarm by Joel Califa. Used with permission.
+Inspired by Swarm by Joel Califa and Swarm Rebuild by Dhvanil Patel.
 ```
 
 ### Graphic assets (all in `store/`)
