@@ -1972,8 +1972,8 @@ canvas.off{pointer-events:none}
       }
       if (this.active.some((u) => u.state === 2)) this.active = this.active.filter((u) => u.state !== 2);
 
-      // end of a screen: everything still hidden there (backgrounds of plain wrappers,
-      // decoration) comes in top to bottom behind a soft light line
+      // a finished stretch of the page: everything still hidden there (backgrounds of plain
+      // wrappers, decoration) fades in gently, top to bottom
       if (this.sweep) {
         const s = this.sweep;
         s.p = Math.min(1, s.p + sdt / s.dur);
@@ -2011,7 +2011,7 @@ canvas.off{pointer-events:none}
             const sBottom = bottom - top + v.y;
             const keep = this.unbuilt();
             const items = this.scanner.leftovers(Math.max(0, sTop - 2), sBottom + 2, keep);
-            this.sweep = { top: gap.top, bottom, vTop: sTop, vBottom: sBottom, top0: top, p: 0, i: 0, items, keep, dur: items.length ? 0.6 : 0.2 };
+            this.sweep = { top: gap.top, bottom, vTop: sTop, vBottom: sBottom, p: 0, i: 0, items, keep, dur: items.length ? 0.6 : 0.2 };
           }
         }
       }
@@ -3091,22 +3091,6 @@ canvas.off{pointer-events:none}
       }
       this.drawGuides(g, v, top);
       this.drawRulers(g, v, top);
-      if (this.sweep) {
-        const s = this.sweep;
-        const e = s.vTop + (s.vBottom - s.vTop) * easeInOut(s.p) - (top - (s.top0 == null ? top : s.top0));
-        const line = this.dark ? "255,255,255" : "40,40,60";
-        const gl = g.createLinearGradient(0, e - 34, 0, e + 2);
-        gl.addColorStop(0, `rgba(${line},0)`);
-        gl.addColorStop(1, `rgba(${line},${this.dark ? 0.16 : 0.08})`);
-        g.fillStyle = gl;
-        g.fillRect(v.x, e - 34, v.w, 36);
-        const hl = g.createLinearGradient(v.x, 0, v.x + v.w, 0);
-        hl.addColorStop(0, rgba(INK, 0));
-        hl.addColorStop(0.5, rgba(INK, 0.75));
-        hl.addColorStop(1, rgba(INK, 0));
-        g.fillStyle = hl;
-        g.fillRect(v.x, e - 1, v.w, 2);
-      }
       const sheetA = this.intro < 1 ? clamp((this.intro - 0.3) / 0.5, 0, 1) : 1;
       this.drawSwarm(g, sheetA);
     }
