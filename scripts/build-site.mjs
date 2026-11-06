@@ -18,6 +18,11 @@ const src = path.join(root, "site");
 const out = path.join(root, "dist", "site");
 fs.rmSync(out, { recursive: true, force: true });
 fs.cpSync(src, out, { recursive: true });
+// the store graphics live once, in store/; the site uses them as they are
+fs.mkdirSync(path.join(out, "assets"), { recursive: true });
+for (const f of ["icon.svg", "marquee-1400x560.png", "screenshot-1.png", "screenshot-2.png", "screenshot-3.png", "screenshot-4.png", "screenshot-5.png"]) {
+  fs.copyFileSync(path.join(root, "store", f), path.join(out, "assets", f));
+}
 for (const f of fs.readdirSync(out)) {
   if (!/\.(html|css)$/.test(f)) continue;
   const p = path.join(out, f);

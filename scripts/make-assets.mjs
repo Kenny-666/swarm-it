@@ -5,7 +5,7 @@
 //   store/screenshot-{1..5}.png              1280×800, captioned moments of Swarmline building the demo page
 //   store/promo-440x280.png                   small promo tile
 //   store/marquee-1400x560.png                marquee promo tile
-//   site/assets/*                              copies for the website
+//   site/assets/{favicon-32,hero}.png          the website's own images
 // Run: npm run assets   (needs Chrome; set CHROME_PATH if it isn't in a standard place)
 
 import fs from "node:fs";
@@ -190,10 +190,9 @@ try {
   }
   console.log("promo tiles done");
 
-  // ---- website copies
+  // ---- the website's own images (the store graphics are copied in by build-site.mjs)
   const sa = path.join(root, "site", "assets");
   fs.mkdirSync(sa, { recursive: true });
-  for (const f of ["icon.svg", "store-icon-128.png", "screenshot-1.png", "screenshot-2.png", "screenshot-3.png", "screenshot-4.png", "screenshot-5.png", "marquee-1400x560.png"]) fs.copyFileSync(path.join(root, "store", f), path.join(sa, f));
   await shootSVG(iconSVG(32), 32, path.join(sa, "favicon-32.png"));
   fs.copyFileSync(dup, path.join(sa, "hero.png")); // the website hero: a duplicate being dragged
   console.log("site assets done");

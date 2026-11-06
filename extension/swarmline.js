@@ -41,8 +41,8 @@
     "option", "optgroup", "datalist", "source", "track", "param", "area", "map", "swarmline-layer",
   ]);
   const MEDIA = new Set(["img", "svg", "video", "canvas", "picture", "iframe", "embed", "object"]);
+  const LIVE_MEDIA = new Set(["video", "canvas", "iframe", "embed", "object"]); // revealed by fading, never clipped
   const CONTROL = new Set(["input", "textarea", "select"]);
-  const LANDMARK = new Set(["header", "nav", "main", "section", "article", "aside", "footer", "form", "figure", "button", "ul", "ol", "table"]);
 
   const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
   const TAU = Math.PI * 2;
@@ -170,8 +170,8 @@
     fadeIn(el, ms, from = 0) {
       if (!this.show(el)) return;
       try {
-        const op = getComputedStyle(el).opacity;
-        el.animate([{ opacity: from }, { opacity: op }], { duration: ms, easing: "cubic-bezier(.2,.7,.2,1)" });
+        // the end value is left implicit (the element's own opacity): no style read per fade
+        el.animate([{ opacity: from }, {}], { duration: ms, easing: "cubic-bezier(.2,.7,.2,1)" });
       } catch (_) {}
     }
     // text typed in place: clip the element to the letters written so far
@@ -220,16 +220,6 @@
   }
 
   const isInlineLevel = (d) => d.startsWith("inline") || d === "contents";
-
-  function nameOf(el, kind) {
-    const tag = el.localName;
-    if (kind === "media") return tag === "img" || tag === "picture" ? "Image" : tag === "svg" ? "Vector" : tag[0].toUpperCase() + tag.slice(1);
-    if (LANDMARK.has(tag)) return tag[0].toUpperCase() + tag.slice(1);
-    const cls = ((el.getAttribute && el.getAttribute("class")) || "").trim().split(/\s+/)[0] || "";
-    const clean = cls.replace(/[^a-zA-Z0-9-]/g, "").replace(/^(-|\d)+/, "");
-    if (clean && clean.length <= 18) return clean[0].toUpperCase() + clean.slice(1);
-    return "Frame";
-  }
 
   class Scanner {
     constructor(env, host, stage) {
@@ -341,15 +331,9 @@
           id: this.count++, el, kind, parent, fixed,
           state: 0, phase: 0, p: 0, typed: 0, color: PALETTE[this.count % PALETTE.length],
           y: fixed ? -1e9 : toContent(r.top), w: r.width, h: r.height, top0: r.top, left0: r.left,
-          rad: radiiOf(s, r.width, r.height), label: "", lead: null,
+          rad: radiiOf(s, r.width, r.height), lead: null,
           ...extra,
         };
-        if (kind === "box" && r.width * r.height > 9000) u.label = `${nameOf(el, kind)}  ${Math.round(r.width)} × ${Math.round(r.height)}`;
-        if (kind === "media" && r.width * r.height > 6000) u.label = `${nameOf(el, kind)}  ${Math.round(r.width)} × ${Math.round(r.height)}`;
-        for (let a = parent; a && u.label; a = a.parent) {
-          if (a.label && Math.abs(a.top0 - r.top) < 26 && Math.abs(a.left0 - r.left) < 120) u.label = "";
-          if (Math.abs(a.top0 - r.top) >= 26) break;
-        }
         out.push(u);
         return u;
       };
@@ -932,9 +916,7 @@ canvas.off{pointer-events:none}
       this.speedPx = 0;
       this.restFor = 0;
       this.dwell = 0;
-      this.focus = null;
       this.nibs = [];
-      this.anchor = null;
       this.dt = 0;
       this.startedAt = performance.now();
       this.pageBg = this.readPageBg();
@@ -1329,7 +1311,7 @@ canvas.off{pointer-events:none}
       const job = {
         id: -(2e6 + this.guides.length), kind: "guide", g, el: document.documentElement, parent: null, fixed: false,
         state: 0, phase: 0, p: 0, typed: 0, step: 0, st: 0, y: gy, w: 1, h: 1, left0: 0, top0: 0,
-        rad: [0, 0, 0, 0], label: "", lead: null, r: rand(-0.15, 0.15),
+        rad: [0, 0, 0, 0], lead: null, r: rand(-0.15, 0.15),
       };
       g.job = job;
       for (const m of members) m.snap = g;
@@ -1404,7 +1386,7 @@ canvas.off{pointer-events:none}
         id: -(++this.dupCount), kind: "dup", el: k.c, group: g, parent: null, fixed: false,
         state: 0, phase: 0, p: 0, typed: 0, step: 0, st: 0, done: false,
         y: k.r.top - v.y + top, w: k.r.width, h: k.r.height, top0: k.r.top, left0: k.r.left,
-        rad: [0, 0, 0, 0], label: "", lead: null, units: k.us,
+        rad: [0, 0, 0, 0], lead: null, units: k.us,
       };
       this.roleOf.set(k.c, job);
       // what the copy shares with the original comes along with it; what differs is edited after
@@ -1459,17 +1441,36 @@ canvas.off{pointer-events:none}
       return best; // null: nothing visible to copy from
     }
 
+    // Move an element off its place without touching the layout. Elements in normal flow are
+    // offset with relative positioning rather than a transform (no extra compositing layer
+    // on text that is also clipped while it's typed). Already-positioned elements (sticky,
+    // absolute, fixed) keep a translate, so their own left/top keep meaning what they did.
     shiftEl(el, x, y) {
       if (!this.shifted) this.shifted = new Map();
-      if (!this.shifted.has(el)) this.shifted.set(el, [el.style.getPropertyValue("translate"), el.style.getPropertyPriority("translate")]);
-      el.style.setProperty("translate", `${x.toFixed(1)}px ${y.toFixed(1)}px`, "important");
+      let rec = this.shifted.get(el);
+      if (!rec) {
+        const rel = getComputedStyle(el).position === "static";
+        const props = rel ? ["position", "left", "top"] : ["translate"];
+        rec = { rel, prev: props.map((p) => [p, el.style.getPropertyValue(p), el.style.getPropertyPriority(p)]), v: "" };
+        this.shifted.set(el, rec);
+        if (rel) el.style.setProperty("position", "relative", "important");
+      }
+      const v = `${x.toFixed(1)}px ${y.toFixed(1)}px`;
+      if (rec.v === v) return; // unchanged: no style write, no relayout
+      rec.v = v;
+      if (rec.rel) {
+        el.style.setProperty("left", x.toFixed(1) + "px", "important");
+        el.style.setProperty("top", y.toFixed(1) + "px", "important");
+      } else el.style.setProperty("translate", v, "important");
     }
 
     unshift(el) {
-      const prev = this.shifted && this.shifted.get(el);
-      if (!prev) return;
-      if (prev[0]) el.style.setProperty("translate", prev[0], prev[1]);
-      else el.style.removeProperty("translate");
+      const rec = this.shifted && this.shifted.get(el);
+      if (!rec) return;
+      for (const [p, val, pri] of rec.prev) {
+        if (val) el.style.setProperty(p, val, pri);
+        else el.style.removeProperty(p);
+      }
       this.shifted.delete(el);
     }
 
@@ -1622,8 +1623,13 @@ canvas.off{pointer-events:none}
     }
 
     moveGhost(gh, x, y) {
-      gh.el.style.setProperty("left", (x + gh.ox).toFixed(1) + "px", "important");
-      gh.el.style.setProperty("top", (y + gh.oy).toFixed(1) + "px", "important");
+      const l = (x + gh.ox).toFixed(1);
+      const t = (y + gh.oy).toFixed(1);
+      if (gh.l === l && gh.t === t) return; // unchanged: no style write, no relayout
+      gh.l = l;
+      gh.t = t;
+      gh.el.style.setProperty("left", l + "px", "important");
+      gh.el.style.setProperty("top", t + "px", "important");
     }
 
     dropGhost(gh) {
@@ -1662,7 +1668,6 @@ canvas.off{pointer-events:none}
         st.show(u.el);
         for (const k of u.el.querySelectorAll("*")) st.show(k);
       } else st.show(u.el);
-      if (!silent && this.focus === u) this.focus = null;
     }
 
     liveRect(u) {
@@ -1841,7 +1846,6 @@ canvas.off{pointer-events:none}
           }
           this.crew(u);
           this.active.push(u);
-          if (u.kind !== "text" || u.fs >= 26) this.focus = u;
           busy++;
           started++;
         }
@@ -1877,6 +1881,14 @@ canvas.off{pointer-events:none}
           continue;
         }
         u.offT = 0;
+        // watchdog: an element that collapsed or vanished mid-job (or any job that stalls)
+        // never holds up the build: it simply appears and the swarm moves on
+        u.age = (u.age || 0) + dt;
+        if ((u.noRect || 0) > 0.5 || u.age > 20) {
+          if (u.kind === "dup") this.abortDup(u);
+          else this.complete(u, true);
+          continue;
+        }
         if (u.kind === "dup") this.stepDup(u, T, dt);
         else if (u.kind === "guide") this.stepGuide(u, T, dt);
         else if (u.line) this.stepLine(u, T, dt);
@@ -2055,7 +2067,7 @@ canvas.off{pointer-events:none}
         }
         u.typed = i;
         if (i > i0 && this.sfx && n) this.sfx.key(n.x, this.W, n.id, i - i0, 0);
-        if (u.mode !== "fade") st.clip(u.el, this.typedPath(u, i));
+        if (u.mode !== "fade" && i !== i0) st.clip(u.el, this.typedPath(u, i)); // only when a letter was added
         if (i >= N) {
           u.step = 4;
           u.st = 0;
@@ -2283,6 +2295,12 @@ canvas.off{pointer-events:none}
 
     scanIn(u) {
       try {
+        // live media (video, canvas, embeds) fade in instead: a clip-path animation on a
+        // WebGL canvas or a playing video can lock up Chrome's renderer
+        if (LIVE_MEDIA.has(u.el.localName) || u.el.querySelector("video,canvas,iframe,embed,object")) {
+          u.el.animate([{ opacity: 0 }, {}], { duration: 520 / this.speed, easing: "ease-out" });
+          return;
+        }
         const kf = u.kind === "control"
           ? [{ clipPath: "inset(0 100% 0 0)" }, { clipPath: "inset(0 0 0 0)" }]
           : [{ clipPath: "inset(0 0 100% 0)", opacity: 0.6 }, { clipPath: "inset(0 0 0 0)", opacity: 1 }];
@@ -2308,7 +2326,7 @@ canvas.off{pointer-events:none}
       for (const el of leftover.slice(0, 600)) {
         try {
           const r = el.getBoundingClientRect();
-          if (r.bottom > 0 && r.top < innerHeight && !el.firstElementChild) el.animate([{ opacity: 0 }, { opacity: getComputedStyle(el).opacity }], { duration: 450 });
+          if (r.bottom > 0 && r.top < innerHeight && !el.firstElementChild) el.animate([{ opacity: 0 }, {}], { duration: 450 });
         } catch (_) {}
       }
       this.$('[data-a="tour"]').hidden = true;
@@ -2883,7 +2901,10 @@ canvas.off{pointer-events:none}
       for (const u of this.active) {
         if (!this.inView(u, v, top, 60)) continue;
         const R = this.liveRect(u);
-        if (R) rects.set(u, R);
+        if (R) {
+          rects.set(u, R);
+          u.noRect = 0;
+        } else u.noRect = (u.noRect || 0) + this.dt; // collapsed or gone: noted, the watchdog decides
       }
       this.stepSwarm(rects); // pointers first, so a shape being dragged sits exactly under its pointer
       if (this.held) {

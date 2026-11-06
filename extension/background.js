@@ -3,7 +3,7 @@
 
 const TITLE = "Swarmline (Alt+Shift+L)";
 
-async function draft(tab) {
+async function build(tab) {
   if (!tab || tab.id == null) return;
   try {
     await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ["swarmline.js"] });
@@ -21,4 +21,4 @@ async function draft(tab) {
   }
 }
 
-chrome.action.onClicked.addListener(draft);
+chrome.action.onClicked.addListener(build);

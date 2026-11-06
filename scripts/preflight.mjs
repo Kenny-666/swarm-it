@@ -119,7 +119,8 @@ const cfg = JSON.parse(fs.readFileSync(rel("site.config.json"), "utf8"));
 const emailOk = /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(cfg.supportEmail || "");
 check(emailOk, `support email: ${cfg.supportEmail}`, "support email not set: npm run configure -- --email you@example.com");
 for (const f of ["index.html", "privacy.html", "support.html", "styles.css"]) check(fs.existsSync(rel("site", f)), `site/${f}`);
-for (const a of ["icon.svg", "favicon-32.png", "screenshot-1.png"]) check(fs.existsSync(rel("site", "assets", a)), `site/assets/${a}`);
+for (const a of ["favicon-32.png", "hero.png"]) check(fs.existsSync(rel("site", "assets", a)), `site/assets/${a}`);
+check(fs.existsSync(rel("store", "icon.svg")), "store/icon.svg (the site logo)");
 if (emailOk) {
   try {
     execFileSync(process.execPath, [rel("scripts", "build-site.mjs")], { stdio: "pipe" });

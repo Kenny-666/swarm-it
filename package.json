@@ -6,6 +6,7 @@
   "type": "module",
   "scripts": {
     "check": "node --check extension/swarmline.js && node --check extension/background.js",
+    "test:all": "npm run lint && npm test && npm run test:ext",
     "lint": "eslint extension tests scripts",
     "test": "node tests/smoke.mjs demo/index.html",
     "test:site": "node tests/smoke.mjs https://cenovabuild.com/",
@@ -22,7 +23,7 @@
     "globals": "17.14.0",
     "puppeteer-core": "25.16.0"
   },
-  "license": "MIT",
+  "license": "SEE LICENSE IN LICENSE",
   "homepage": "https://imperfec-t.github.io/swarmline/",
   "repository": {
     "type": "git",

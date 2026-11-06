@@ -49,7 +49,7 @@ try {
   const click = () =>
     sw.evaluate(async (u) => {
       const tab = (await chrome.tabs.query({})).find((t) => t.url === u);
-      await draft(tab); // eslint-disable-line no-undef
+      await build(tab); // eslint-disable-line no-undef
       return chrome.action.getBadgeText({ tabId: tab.id });
     }, page.url());
   const sheet = () => page.evaluate(() => !!document.querySelector("swarmline-layer"));

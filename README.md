@@ -1,6 +1,6 @@
 # Swarmline
 
-**Watch a swarm build any website, live, in your browser.**
+**Watch a swarm of cursors build any website, live, in your browser.**
 
 ![Swarmline building a page](store/marquee-1400x560.png)
 
@@ -35,15 +35,15 @@ Turn the tour off to scroll yourself: the swarm builds whatever comes to rest on
 
 ## How it works
 
-[`swarmline.js`](extension/swarmline.js) is one dependency-free content script:
+[`swarmline.js`](extension/swarmline.js) is one dependency-free content script, injected only when you click (`activeTab` + `scripting`):
 
 1. **Blank canvas.** The page fades to its own background colour. A small stylesheet hides every element (`visibility: hidden`, so the layout never moves) except the ones the swarm has put back, which carry a marker attribute. The page keeps running underneath.
-2. **Scan.** When the page comes to rest, the visible part of the DOM (including open shadow roots) is read into *units*: boxes (anything that paints a background, border or shadow), text blocks (their real line boxes and letter positions, with split-text letters merged back into lines), media, form controls and icon-font glyphs.
-3. **Build.** Units start in reading order, each with a crew of one to four nibs from the swarm. A crew traces a box's outline with a live size badge, then the real box fades in; text is typed by clipping the real element to the letters written so far (`clip-path: path(…)`) with a caret in the crew's colour; images and canvases scan in with a clip animation while the crew rides the scan line. A child waits for the box it sits in.
-4. **Sweep.** When everything on screen is built, anything still hidden there (wrapper backgrounds, decoration) comes in top to bottom behind a light line that the idle swarm rides.
-5. **Tour and finish.** Auto-tour eases to the next screen once the page is still. At the end the stylesheet and markers are removed, the page is fully interactive again, the swarm follows your mouse pointer, and the HUD shows a summary with **Replay**.
+2. **Scan.** When the page comes to rest, the visible part of the DOM (including open shadow roots) is read into *units*: boxes (anything that paints a background, border or shadow), text blocks (their real line boxes and letter positions), media, form controls and icon glyphs. Repeated siblings (cards, rows, links, icons) are grouped for duplicating, and text that lines up gets an alignment guide.
+3. **Build.** Each unit is made by one cursor, step by step, at a tempo that rises with the backlog: boxes are dragged out with a crosshair, text is typed by clipping the real element to the letters written so far (`clip-path: path(…)`), dividers are drawn with the pen tool, image frames are dragged out and the picture scans in. Guides are pulled from the rulers and text is dragged onto them until it snaps. Copies of a finished component are Alt-dragged into place as a look-alike, then the real copy takes over and whatever differs is selected and retyped or swapped. A child waits for the box it sits in.
+4. **Sweep.** When everything on screen is built, anything still hidden there (wrapper backgrounds, decoration) comes in top to bottom behind a light line.
+5. **Tour and finish.** Auto-tour eases to the next screen once the page is still. At the end the stylesheet and markers are removed, the page is fully interactive again, the swarm orbits your mouse pointer, and the toolbar offers **Replay**.
 
-The swarm, outlines, badges and caret are drawn on a transparent `<canvas>` in a closed shadow root above the page. Exiting at any point (or any error) removes everything Swarmline added.
+The cursors, selections, rulers and guides are drawn on a transparent `<canvas>` in a closed shadow root above the page. Exiting at any point (or any error) removes everything Swarmline added and puts the page back exactly as it was.
 
 ## Project layout
 
@@ -53,7 +53,7 @@ The swarm, outlines, badges and caret are drawn on a transparent `<canvas>` in a
 | `site/` | The public website: homepage, privacy policy, support (deployed to GitHub Pages) |
 | `store/` | Store listing copy ([`LISTING.md`](store/LISTING.md)), icon, screenshots, promo tiles |
 | `demo/index.html` | Self-contained demo page (a fictional studio) used for testing and store screenshots |
-| `scripts/` | `make-assets.mjs` (graphics), `package.mjs` (store zip), `preflight.mjs` (pre-submission checks), `set-email.mjs` |
+| `scripts/` | `make-assets.mjs` (icon, captioned store screenshots, promo tiles), `package.mjs` (store zip), `preflight.mjs` (pre-submission checks), `build-site.mjs` (the website), `configure.mjs` (support email and store link) |
 | `tests/` | `smoke.mjs` (runs it on a page with Auto-tour; frames, timings, frame rate) and `extension.mjs` (the real extension) |
 | `PUBLISHING.md` | Step-by-step: from this folder to a live Web Store listing |
 
@@ -64,6 +64,7 @@ Needs Node.js 20+ and Chrome.
 ```sh
 npm install
 npm run check       # syntax check
+npm run test:all    # lint, demo smoke test and the real extension test
 npm run lint        # ESLint
 npm test            # smoke test on the demo page
 npm run test:site   # smoke test on a heavy real site (GSAP, Lenis, marquees)
