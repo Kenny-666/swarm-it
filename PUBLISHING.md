@@ -17,7 +17,7 @@ All paths are inside `H:\swarm design\swarmline`.
 | Website (home, privacy, support) | `site\` (built copy in `dist\site\`) | Published to GitHub Pages automatically when you push |
 | Privacy policy | `PRIVACY.md`, and the web page `site\privacy.html` | The store's privacy policy URL points at the web page |
 | Extension source | `extension\` (`manifest.json`, `background.js`, `swarmline.js`, `icons\`) | What's inside the zip |
-| Demo page for screenshots | `demo\index.html` | A fictional studio site the screenshots are taken from |
+| Demo pages | `demo\showcase.html` (screenshots), `demo\index.html` (tests) | Quillwave, a fictional SaaS product the screenshots are taken from, and a fictional studio site the tests run on |
 | Build and check scripts | `scripts\` | `assets`, `package`, `site`, `configure`, `preflight` |
 | Tests | `tests\` | `npm test`, `npm run test:ext` |
 | Credits and licence | `NOTICE.md`, `LICENSE` | Credits Swarm Rebuild (Dhvanil Patel) and Swarm (Joel Califa) |

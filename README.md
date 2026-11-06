@@ -54,7 +54,7 @@ The cursors, selections, rulers and guides are drawn on a transparent `<canvas>`
 | `extension/` | The extension: `manifest.json` (MV3, `activeTab` + `scripting` only), `background.js`, `swarmline.js`, `icons/` |
 | `site/` | The public website: homepage, privacy policy, support (deployed to GitHub Pages) |
 | `store/` | Store listing copy ([`LISTING.md`](store/LISTING.md)), icon, screenshots, promo tiles |
-| `demo/index.html` | Self-contained demo page (a fictional studio) used for testing and store screenshots |
+| `demo/index.html`, `demo/showcase.html` | Self-contained demo pages: a fictional studio (used by the tests) and a fictional SaaS product, Quillwave (used for the store screenshots) |
 | `scripts/` | `make-assets.mjs` (icon, captioned store screenshots, promo tiles), `package.mjs` (store zip), `preflight.mjs` (pre-submission checks), `build-site.mjs` (the website), `configure.mjs` (support email and store link) |
 | `tests/` | `smoke.mjs` (runs it on a page with Auto-tour; frames, timings, frame rate) and `extension.mjs` (the real extension) |
 | `PUBLISHING.md` | Step-by-step: from this folder to a live Web Store listing |

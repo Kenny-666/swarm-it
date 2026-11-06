@@ -78,10 +78,10 @@ try {
   // ---- screenshots: real moments of Swarmline building the (fictional) demo page,
   // captured the instant each one happens, then framed with a caption (1280×800); the
   // whole browser window fits, so the toolbar (Live agents) is in every shot
-  const demo = pathToFileURL(path.join(root, "demo", "index.html")).href;
+  const demo = pathToFileURL(path.join(root, "demo", "showcase.html")).href;
   const raw = path.join(root, "store", "raw");
   fs.mkdirSync(raw, { recursive: true });
-  const capture = async (name, scrollSel, cond, after) => {
+  const capture = async (name, scrollSel, cond, after, opt = {}) => {
     await page.setViewport({ width: 1440, height: 900, deviceScaleFactor: 2 }); // sharp once scaled into the frame
     await page.goto(demo, { waitUntil: "load" });
     await page.evaluate((sel) => {
@@ -91,15 +91,16 @@ try {
     await sleep(600);
     await page.addScriptTag({ path: path.join(root, "extension", "swarmline.js") });
     await page.waitForFunction(() => window.__swarmline && window.__swarmline.app);
-    await page.evaluate(() => {
+    await page.evaluate((o) => {
       const a = window.__swarmline.app;
-      a.setTour(false);
+      a.setTour(!!o.tour);
+      if (o.speed) a.speed = o.speed;
       if (a.sfx) a.sfx.setOn(false);
-    });
+    }, opt);
     const t0 = Date.now();
     for (;;) {
       const hit = await page.evaluate(`(() => { const a = window.__swarmline.app; return !!a && (${cond})(a); })()`);
-      if (hit || Date.now() - t0 > 20000) break;
+      if (hit || Date.now() - t0 > (opt.wait || 20000)) break;
       await sleep(15);
     }
     if (after) await after();
@@ -109,19 +110,20 @@ try {
     await sleep(300);
     return file;
   };
-  const draw = await capture("draw", null, "(a) => a.done >= 10 && a.active.filter((u) => u.step === 2 && (u.kind === 'box' || u.kind === 'media')).length >= 2");
-  const dup = await capture("duplicate", ".grid3", "(a) => a.active.some((u) => u.kind === 'dup' && u.step === 3 && u.el.classList.contains('card') && u.lead && u.lead.mv && u.lead.mv.t > u.lead.mv.dur * 0.5)");
-  const edit = await capture("edit", ".grid3", "(a) => a.active.some((u) => u.kind === 'text' && u.edit && u.step === 11 && u.inCopy && u.inCopy.el.classList.contains('card'))");
+  const draw = await capture("draw", null, "(a) => a.done >= 70 && a.active.filter((u) => u.step === 2 && (u.kind === 'box' || u.kind === 'media')).length >= 2");
+  const dup = await capture("duplicate", null, "(a) => a.active.some((u) => u.kind === 'dup' && u.step === 3 && u.el.classList.contains('kpi') && u.lead && u.lead.mv && u.lead.mv.t > u.lead.mv.dur * 0.5)");
+  const edit = await capture("edit", null, "(a) => a.active.some((u) => u.kind === 'text' && u.edit && u.step === 11 && u.inCopy && u.inCopy.el.classList.contains('kpi'))");
   const snap = await capture("snap", null, "(a) => a.active.some((u) => u.kind === 'text' && u.step === 21)");
-  const live = await capture("live", null, "(a) => a.done > 30", async () => {
-    await page.keyboard.press("f");
-    await sleep(700);
+  // the real thing: built to the end on its own (3x, with the tour), then back at the top
+  const live = await capture("live", null, "(a) => a.outro && a.outro.t >= 1", async () => {
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await sleep(500);
     for (let t = 0; t <= 1; t += 0.05) {
       await page.mouse.move(980 + 120 * Math.cos(t * 4), 430 + 90 * Math.sin(t * 4));
       await sleep(30);
     }
     await sleep(900);
-  });
+  }, { tour: true, speed: 3, wait: 120000 });
 
   const b64 = (p) => "data:image/png;base64," + fs.readFileSync(p).toString("base64");
   const icon = "data:image/svg+xml;base64," + Buffer.from(iconSVG(128)).toString("base64");
@@ -143,7 +145,7 @@ try {
     .win img{display:block;width:970px;height:606px}
   </style></head><body>
     <div class="cap"><div><h1>${title}</h1><p>${sub}</p></div><div class="brand"><img src="${icon}">Swarmline</div></div>
-    <div class="win"><div class="bar"><i style="background:#ff5f57"></i><i style="background:#febc2e"></i><i style="background:#28c840"></i><div class="url">fernbrook.studio</div></div><img src="${b64(img)}"></div>
+    <div class="win"><div class="bar"><i style="background:#ff5f57"></i><i style="background:#febc2e"></i><i style="background:#28c840"></i><div class="url">quillwave.app</div></div><img src="${b64(img)}"></div>
   </body></html>`;
   const shots = [
     [draw, "Every box drawn by hand", "Live agents drag out each section with sizes, rulers and guides, then it fills in for real."],

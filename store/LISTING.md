@@ -71,7 +71,7 @@ Inspired by Swarm by Joel Califa and Swarm Rebuild by Dhvanil Patel.
 | Marquee promo tile | `marquee-1400x560.png` | 1400×560 |
 | Promo video | optional: a YouTube link to a screen recording of Swarmline on your own site | |
 
-Upload the screenshots in that order. Each is a real moment of Swarmline building `demo/index.html` (a page for a fictional studio, so no real company's site or branding appears), captured the instant it happens and framed with a caption. Regenerate everything with `npm run assets`.
+Upload the screenshots in that order. Each is a real moment of Swarmline building `demo/showcase.html` (Quillwave, a fictional SaaS product, so no real company's site or branding appears), captured the instant it happens and framed with a caption. Regenerate everything with `npm run assets`.
 
 ### Additional fields
 
