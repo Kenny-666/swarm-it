@@ -6,7 +6,7 @@ Swarmline is a Chrome extension that plays an animation of the current web page 
 
 - **It only runs when you ask.** Swarmline uses Chrome's `activeTab` permission, so it can access only the tab where you click its toolbar button or press its shortcut, and only at that moment. It has no access to your other tabs, your browsing history, or any site you haven't started it on.
 - **Everything happens on your device.** To play the animation, Swarmline reads the layout of the page in your browser (where elements are, their sizes and colours) and temporarily hides elements, then shows them again one by one. That information is used only for the animation, stays in that tab's memory, and is discarded when the animation ends, when you exit, or when you leave the page. The page is always left exactly as it was.
-- **No network requests.** Swarmline doesn't contact any server, doesn't use analytics or tracking, and doesn't load remote code.
+- **No servers, no tracking.** Swarmline doesn't contact any server of its own or anyone else's, doesn't use analytics or tracking, and doesn't load remote code. The one thing it shows from the web is the open site's own icon (its favicon), in the toolbar, taken from that same site.
 - **No storage.** Nothing is saved to cookies, `localStorage`, `chrome.storage` or anywhere else.
 - **No accounts, no ads, no selling of data.**
 

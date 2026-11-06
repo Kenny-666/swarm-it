@@ -1,65 +1,150 @@
-# Publishing Swarmline to the Chrome Web Store
+# Publishing Swarmline
 
-Everything in this folder is ready. These are the steps only you can do (accounts, payment, review). Allow about an hour, then a few days for Google's review.
+Everything to upload is already built and checked. This guide covers the parts only you can do: accounts, the fee and the review. It takes about an hour, then Google usually reviews in a few days.
 
-## 0. Before you start
+## Where everything is
 
-- [x] Support email set to **imperfxt@gmail.com** (shown on the website and privacy policy). To change it later:
-      ```sh
-      npm run configure -- --email new@example.com
-      ```
-- [ ] Run the full check. It must say **READY** (this also rebuilds the five store screenshots from real moments of a build):
-      ```sh
-      npm install
-      npm run assets && npm run package && npm run preflight
-      ```
+All paths are inside `H:\swarm design\swarmline`.
 
-## 1. Put the code and website on GitHub (for the privacy policy URL)
+| What | Where | Used for |
+| --- | --- | --- |
+| **The extension package** | `dist\swarmline-1.0.0.zip` | Upload to the Chrome Web Store (built by `npm run package`) |
+| **Listing text, ready to paste** | `store\LISTING.md` | Every field of the store dashboard: description, privacy answers, URLs |
+| Store icon | `store\store-icon-128.png` | Store listing → Store icon |
+| Screenshots 1–5 | `store\screenshot-1.png` … `screenshot-5.png` | Store listing → Screenshots (upload in order) |
+| Small promo tile | `store\promo-440x280.png` | Store listing → Small promo tile |
+| Marquee promo tile | `store\marquee-1400x560.png` | Store listing → Marquee promo tile |
+| Website (home, privacy, support) | `site\` (built copy in `dist\site\`) | Published to GitHub Pages automatically when you push |
+| Privacy policy | `PRIVACY.md`, and the web page `site\privacy.html` | The store's privacy policy URL points at the web page |
+| Extension source | `extension\` (`manifest.json`, `background.js`, `swarmline.js`, `icons\`) | What's inside the zip |
+| Demo page for screenshots | `demo\index.html` | A fictional studio site the screenshots are taken from |
+| Build and check scripts | `scripts\` | `assets`, `package`, `site`, `configure`, `preflight` |
+| Tests | `tests\` | `npm test`, `npm run test:ext` |
+| Credits and licence | `NOTICE.md`, `LICENSE` | Credits Swarm Rebuild (Dhvanil Patel) and Swarm (Joel Califa) |
+| Website settings | `site.config.json` | Support email, store link, repo and site URLs (change them with `npm run configure`) |
+| Pages deploy | `.github\workflows\pages.yml` | Builds and publishes the website on every push |
 
-The store requires a public privacy policy page, and the site in `site/` provides it.
+Not uploaded anywhere: `node_modules\` (tools for building and testing) and `store\raw\` (raw captures used to make the screenshots, ignored by git).
 
-1. Create a **public** repository named **`swarmline`** on github.com (account `imperfec-t`). Don't add a README or license; this folder already has them.
-2. From this folder:
+## Your details (already filled in everywhere)
+
+| | |
+| --- | --- |
+| Publisher name | imperfxt |
+| Account type | Non-trader |
+| Contact and support email | imperfxt@gmail.com |
+| GitHub | imperfec-t, repo `swarmline` |
+| Homepage | https://imperfec-t.github.io/swarmline/ |
+| Support page | https://imperfec-t.github.io/swarmline/support.html |
+| Privacy policy | https://imperfec-t.github.io/swarmline/privacy.html |
+
+## Step 0: final check (2 minutes)
+
+In a terminal in this folder:
+
+```sh
+npm install
+npm run assets && npm run package && npm run preflight
+```
+
+It must end with **READY: 0 failing**. One warning ("storeUrl not set yet") is expected until the store link exists in step 5. `npm run assets` regenerates the five screenshots from real moments of a build, so run it again whenever the look changes.
+
+## Step 1: put the code on GitHub (10 minutes)
+
+The store needs a public privacy policy page, and the website in `site\` provides it.
+
+1. Sign in to github.com as **imperfec-t**. Click **+ → New repository**.
+2. Repository name: **`swarmline`**. Set it to **Public**. Leave "Add a README", ".gitignore" and "license" **unticked**, because this folder already has them. Click **Create repository**.
+3. In a terminal in this folder:
    ```sh
    git remote add origin https://github.com/imperfec-t/swarmline.git
    git push -u origin main
    ```
-3. On GitHub: **Settings → Pages → Build and deployment → Source: GitHub Actions**.
-4. Open the **Actions** tab and wait for **Website** to go green (re-run it once if it ran before step 3).
-5. Check these three pages load:
+   The first push opens a browser window to sign in to GitHub. Approve it.
+
+## Step 2: turn on the website (5 minutes)
+
+1. On the repo page: **Settings → Pages → Build and deployment → Source: GitHub Actions**.
+2. Open the **Actions** tab. Wait for the **Website** run to turn green (about a minute). If it ran and failed before you changed the setting, click it and choose **Re-run all jobs**.
+3. Open these three pages and check they load:
    - https://imperfec-t.github.io/swarmline/
    - https://imperfec-t.github.io/swarmline/privacy.html
    - https://imperfec-t.github.io/swarmline/support.html
 
-## 2. Register as a Chrome Web Store developer (once)
+Don't submit to the store until the privacy page loads. Reviewers open it.
 
-1. Go to the [Developer Dashboard](https://chrome.google.com/webstore/devconsole) and sign in with the Google account you want to publish under.
-2. Accept the developer agreement and pay the one-time registration fee.
-3. In **Account**, set the **publisher name** and **contact email** (use imperfxt@gmail.com), and verify the email (Google sends a link). Submission isn't possible until the contact email is verified.
+## Step 3: developer account (once, 10 minutes)
 
-## 3. Create the item
+1. Turn on **2-Step Verification** for the Google account you'll publish with (myaccount.google.com → Security). The Chrome Web Store requires it.
+2. Open the [Chrome Web Store Developer Dashboard](https://chrome.google.com/webstore/devconsole) and sign in.
+3. Accept the developer agreement and pay the one-time registration fee.
+4. **Account** page:
+   - **Publisher name:** `imperfxt`
+   - **Trader / non-trader:** choose **non-trader**. You can change this later if you add paid features.
+   - **Contact email:** `imperfxt@gmail.com`, then click the verification link Google emails you. You can't submit until it's verified.
+   - Leave the physical address empty unless the form requires it. As a non-trader it isn't shown on the listing.
 
-1. **Items → New item → upload `dist/swarmline-1.0.0.zip`**.
-2. Fill in each tab using [`store/LISTING.md`](store/LISTING.md), which has every value ready to paste:
-   - **Store listing:** description, category (Developer Tools), language, the store icon, five screenshots (in order), small promo tile and marquee tile, homepage and support URLs.
-   - **Privacy:** the single purpose text, the two permission justifications, "No" to remote code, no data types collected, tick the three certifications, and the privacy policy URL.
-   - **Distribution:** free, public, all regions.
-3. Press **Submit for review**. Review usually takes a few days; you'll get an email.
+## Step 4: create the listing (20 minutes)
 
-## 4. After it's approved
+1. Dashboard → **Items → + New item** → upload **`dist\swarmline-1.0.0.zip`**.
+2. Fill in each tab. Every value is in **`store\LISTING.md`**, so copy and paste from there:
 
-1. Copy the extension's store address (it looks like `https://chromewebstore.google.com/detail/swarmline/<id>`).
-2. Point the website's **Add to Chrome** buttons at it and publish:
+   **Store listing tab**
+   - **Description:** paste the block under "Description".
+   - **Category:** Developer Tools. **Language:** English.
+   - **Store icon:** `store\store-icon-128.png`
+   - **Screenshots:** `store\screenshot-1.png` to `screenshot-5.png`, **in that order**.
+   - **Small promo tile:** `store\promo-440x280.png`. **Marquee promo tile:** `store\marquee-1400x560.png`.
+   - **Homepage URL** and **Support URL:** as in the table above. Leave **Official URL** empty.
+   - **Mature content:** No.
+
+   **Privacy tab**
+   - **Single purpose:** paste from LISTING.md.
+   - **Permission justifications:** paste the two lines for `activeTab` and `scripting`. There are no host permissions to justify.
+   - **Remote code:** "No, I am not using remote code".
+   - **Data usage:** tick **no** data types, then tick all **three** certifications.
+   - **Privacy policy URL:** https://imperfec-t.github.io/swarmline/privacy.html
+
+   **Distribution tab**
+   - **Payments:** Free. **Visibility:** Public. **Regions:** All regions.
+
+   **Test instructions tab** (if shown)
+   - "No account or setup needed. Open any website, click the Swarmline toolbar button (or press Alt+Shift+L), and watch it build. Press F to finish, Esc to exit."
+
+3. Click **Save draft**, then **Submit for review**. You can untick "Publish automatically after approval" if you want to press Publish yourself.
+
+Review usually takes a few days, sometimes longer for a new developer account. Google emails you the result.
+
+## Step 5: after approval (5 minutes)
+
+1. Copy the store address. It looks like `https://chromewebstore.google.com/detail/swarmline/<id>`.
+2. Point the website's **Add to Chrome** buttons at it:
    ```sh
    npm run configure -- --store-url https://chromewebstore.google.com/detail/swarmline/<id>
-   git commit -am "Link the store listing" && git push
+   git commit -am "Link the store listing"
+   git push
    ```
+   The website updates by itself within a minute.
 
 ## Shipping an update later
 
-1. Make the change, then bump `"version"` in `extension/manifest.json` (for example `1.0.1`) and in `package.json`.
-2. `npm test && npm run test:ext && npm run assets && npm run package && npm run preflight`
-3. Dashboard → your item → **Package → Upload new package** → `dist/swarmline-<version>.zip` → **Submit for review**.
+1. Make the change, then raise `"version"` in both `extension\manifest.json` and `package.json` (for example to `1.0.1`).
+2. Run:
+   ```sh
+   npm test && npm run test:ext && npm run assets && npm run package && npm run preflight
+   ```
+3. Dashboard → your item → **Package → Upload new package** → `dist\swarmline-<version>.zip` → **Submit for review**. If the screenshots changed, replace them on the Store listing tab as well.
+4. `git commit -am "1.0.1"` and `git push`.
+
+## If something goes wrong
+
+| Problem | Fix |
+| --- | --- |
+| "Couldn't find manifest" on upload | Upload the zip from `dist\` as it is. Don't unzip it or zip the folder yourself. |
+| Can't submit: email not verified | Account page → resend the verification email to imperfxt@gmail.com. |
+| Privacy page shows 404 | Settings → Pages must say "GitHub Actions". Then re-run the Website workflow in the Actions tab. |
+| `git push` is rejected | The repo was created with a README. Delete the repo, create it again empty, and push again. |
+| Rejected for permissions or privacy | Reply in the dashboard quoting LISTING.md: Swarmline only uses `activeTab` and `scripting`, collects nothing and has no remote code. |
 
 ## Common rejection reasons (already handled)
 
@@ -67,7 +152,7 @@ The store requires a public privacy policy page, and the site in `site/` provide
 | --- | --- |
 | Excessive permissions | Only `activeTab` and `scripting`; no host permissions, no always-on content scripts |
 | Missing or vague single purpose | One clear purpose, stated in the listing and the manifest summary |
-| No privacy policy / mismatched data disclosures | Public policy page; the code makes no network calls and stores nothing (checked by `npm run preflight`) |
+| No privacy policy / mismatched data disclosures | Public policy page that matches the code: nothing is collected, no servers are contacted (checked by `npm run preflight`) |
 | Remote code | All code is bundled; preflight checks for `eval`, `new Function` and remote scripts |
-| Misleading or copied branding | Original name, icon, artwork and animation; screenshots use a fictional demo site |
+| Misleading or copied branding | Original name, icon and artwork, and credits in NOTICE.md; screenshots use a fictional demo site |
 | Keyword stuffing | The description is plain prose with no keyword lists |

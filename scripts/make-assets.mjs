@@ -76,12 +76,13 @@ try {
   console.log("icons done");
 
   // ---- screenshots: real moments of Swarmline building the (fictional) demo page,
-  // captured the instant each one happens, then framed with a caption (1280×800)
+  // captured the instant each one happens, then framed with a caption (1280×800); the
+  // whole browser window fits, so the toolbar (Live agents) is in every shot
   const demo = pathToFileURL(path.join(root, "demo", "index.html")).href;
   const raw = path.join(root, "store", "raw");
   fs.mkdirSync(raw, { recursive: true });
   const capture = async (name, scrollSel, cond, after) => {
-    await page.setViewport({ width: 1440, height: 900, deviceScaleFactor: 1 });
+    await page.setViewport({ width: 1440, height: 900, deviceScaleFactor: 2 }); // sharp once scaled into the frame
     await page.goto(demo, { waitUntil: "load" });
     await page.evaluate((sel) => {
       const el = sel && document.querySelector(sel);
@@ -129,27 +130,27 @@ try {
     *{box-sizing:border-box}html,body{margin:0;overflow:hidden}
     body{width:1280px;height:800px;position:relative;font-family:${FONT};color:#fff;
       background:radial-gradient(70% 90% at 10% 0%,#2b1d48 0%,rgba(43,29,72,0) 60%),radial-gradient(60% 80% at 100% 10%,#14275a 0%,rgba(20,39,90,0) 60%),#0d0e15}
-    .cap{position:absolute;left:100px;top:46px;right:100px;display:flex;align-items:flex-start;justify-content:space-between}
-    h1{margin:0;font-size:38px;line-height:1.08;font-weight:800;letter-spacing:-.02em}
-    p{margin:10px 0 0;font-size:18px;line-height:1.4;color:#C9CDDA;max-width:760px}
+    .cap{position:absolute;left:155px;top:34px;right:155px;display:flex;align-items:flex-start;justify-content:space-between}
+    h1{margin:0;font-size:36px;line-height:1.08;font-weight:800;letter-spacing:-.02em}
+    p{margin:8px 0 0;font-size:17px;line-height:1.4;color:#C9CDDA;max-width:800px;white-space:nowrap}
     .brand{display:flex;align-items:center;gap:10px;font-weight:750;font-size:18px;color:#E9EBF2;margin-top:6px}
     .brand img{width:30px;height:30px}
-    .win{position:absolute;left:100px;top:182px;width:1080px;height:700px;border-radius:14px;overflow:hidden;background:#fff;
+    .win{position:absolute;left:155px;top:140px;width:970px;border-radius:14px;overflow:hidden;background:#fff;
       box-shadow:0 40px 90px rgba(0,0,0,.55),0 0 0 1px rgba(255,255,255,.1)}
-    .bar{height:36px;background:#1c1e29;display:flex;align-items:center;gap:8px;padding:0 14px}
+    .bar{height:34px;background:#1c1e29;display:flex;align-items:center;gap:8px;padding:0 14px}
     .bar i{width:11px;height:11px;border-radius:50%;display:block}
     .url{margin-left:14px;height:22px;flex:0 0 360px;border-radius:7px;background:#2a2d3b;color:#9aa1b4;font-size:12px;display:flex;align-items:center;padding:0 10px}
-    .win img{display:block;width:1080px;height:675px}
+    .win img{display:block;width:970px;height:606px}
   </style></head><body>
     <div class="cap"><div><h1>${title}</h1><p>${sub}</p></div><div class="brand"><img src="${icon}">Swarmline</div></div>
     <div class="win"><div class="bar"><i style="background:#ff5f57"></i><i style="background:#febc2e"></i><i style="background:#28c840"></i><div class="url">fernbrook.studio</div></div><img src="${b64(img)}"></div>
   </body></html>`;
   const shots = [
-    [draw, "Every box drawn by hand", "A swarm of cursors drags out each section with live sizes, rulers and guides, then it fills in for real."],
-    [dup, "Build one. Duplicate the rest.", "Cards, rows and links are Alt-dragged as copies, with the spacing measured, like a designer would."],
+    [draw, "Every box drawn by hand", "Live agents drag out each section with sizes, rulers and guides, then it fills in for real."],
+    [dup, "Build one. Duplicate the rest.", "Cards, rows and links are Alt-dragged as copies with the spacing measured, like a designer would."],
     [edit, "Then change the details", "Each copy's words are selected and retyped, and a different image or colour is swapped in."],
     [snap, "Typed, then snapped into place", "Text is typed letter by letter and nudged onto an alignment guide until it snaps."],
-    [live, "Live again in seconds", "When it's done the page is fully live, and the swarm follows your cursor. Hide the controls with H to record."],
+    [live, "Live again in seconds", "The page is fully live again and the swarm follows your cursor. Press H to hide the controls."],
   ];
   for (const [i, [img, title, sub]] of shots.entries()) {
     await page.setViewport({ width: 1280, height: 800, deviceScaleFactor: 1 });
