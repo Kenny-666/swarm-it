@@ -77,8 +77,8 @@ Upload the screenshots in that order. Each is a real moment of Swarmline buildin
 | Field | Value |
 | --- | --- |
 | Official URL | (leave empty unless you verify a domain in Search Console) |
-| Homepage URL | https://tauquirshayaan.github.io/swarmline/ |
-| Support URL | https://tauquirshayaan.github.io/swarmline/support.html |
+| Homepage URL | https://imperfec-t.github.io/swarmline/ |
+| Support URL | https://imperfec-t.github.io/swarmline/support.html |
 | Mature content | No |
 
 ## Privacy practices tab
@@ -106,7 +106,7 @@ Swarmline plays an animation of the current web page being built by a swarm of c
 - I do not use or transfer user data for purposes that are unrelated to my item's single purpose
 - I do not use or transfer user data to determine creditworthiness or for lending purposes
 
-**Privacy policy URL:** https://tauquirshayaan.github.io/swarmline/privacy.html
+**Privacy policy URL:** https://imperfec-t.github.io/swarmline/privacy.html
 
 ## Distribution tab
 

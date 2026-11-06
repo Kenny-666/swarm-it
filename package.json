@@ -23,9 +23,9 @@
     "puppeteer-core": "25.16.0"
   },
   "license": "MIT",
-  "homepage": "https://tauquirshayaan.github.io/swarmline/",
+  "homepage": "https://imperfec-t.github.io/swarmline/",
   "repository": {
     "type": "git",
-    "url": "https://github.com/Tauquirshayaan/swarmline.git"
+    "url": "https://github.com/imperfec-t/swarmline.git"
   }
 }

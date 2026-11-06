@@ -10,7 +10,7 @@ Swarmline is a Chrome extension. Click it on any page and the page becomes a bla
 
 Everything appears in place on the real page, so the result is always exactly the live site: its fonts, GSAP and CSS animations, video, canvases and links keep working throughout.
 
-**Website:** https://tauquirshayaan.github.io/swarmline/ · **Privacy:** [PRIVACY.md](PRIVACY.md) · **License:** [LICENSE](LICENSE) (MIT for Swarmline's own code; the adapted parts stay their authors', see NOTICE)
+**Website:** https://imperfec-t.github.io/swarmline/ · **Privacy:** [PRIVACY.md](PRIVACY.md) · **License:** [LICENSE](LICENSE) (MIT for Swarmline's own code; the adapted parts stay their authors', see NOTICE)
 
 ## Install (development)
 

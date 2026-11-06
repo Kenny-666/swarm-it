@@ -27,4 +27,4 @@ If this policy changes, the new version will be published at the same address wi
 
 ## Contact
 
-Questions about privacy: email imperfxt@gmail.com or open an issue at https://github.com/Tauquirshayaan/swarmline/issues.
+Questions about privacy: email imperfxt@gmail.com or open an issue at https://github.com/imperfec-t/swarmline/issues.

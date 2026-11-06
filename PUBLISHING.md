@@ -18,18 +18,18 @@ Everything in this folder is ready. These are the steps only you can do (account
 
 The store requires a public privacy policy page, and the site in `site/` provides it.
 
-1. Create a **public** repository named **`swarmline`** on github.com (account `Tauquirshayaan`). Don't add a README or license; this folder already has them.
+1. Create a **public** repository named **`swarmline`** on github.com (account `imperfec-t`). Don't add a README or license; this folder already has them.
 2. From this folder:
    ```sh
-   git remote add origin https://github.com/Tauquirshayaan/swarmline.git
+   git remote add origin https://github.com/imperfec-t/swarmline.git
    git push -u origin main
    ```
 3. On GitHub: **Settings → Pages → Build and deployment → Source: GitHub Actions**.
 4. Open the **Actions** tab and wait for **Website** to go green (re-run it once if it ran before step 3).
 5. Check these three pages load:
-   - https://tauquirshayaan.github.io/swarmline/
-   - https://tauquirshayaan.github.io/swarmline/privacy.html
-   - https://tauquirshayaan.github.io/swarmline/support.html
+   - https://imperfec-t.github.io/swarmline/
+   - https://imperfec-t.github.io/swarmline/privacy.html
+   - https://imperfec-t.github.io/swarmline/support.html
 
 ## 2. Register as a Chrome Web Store developer (once)
 
