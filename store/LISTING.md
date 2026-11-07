@@ -29,7 +29,7 @@ One click and any website becomes a blank canvas. Then a swarm of cursors builds
 How the swarm builds a page:
 • Every box, card and section is dragged out with a crosshair, with a live size readout and selection handles, then fills in for real
 • Text boxes are dragged out and typed letter by letter beside a parked I-beam, big headlines included; some headings start small and grow into size
-• A faint 12-column layout grid appears over each section as it is built; rulers slide in, red alignment guides are pulled out, and text is nudged onto them until it snaps
+• As a box is dragged out, its edges sometimes run across the screen as guide lines; rulers slide in, red alignment guides are pulled out, and text is nudged onto them until it snaps
 • Dividers are drawn with the pen tool, click by click
 • Image frames are dragged out as placeholders with a picture icon, then the picture scans into place
 • Repeated parts are built once and then duplicated: cards, list rows, nav links and icons are Alt-dragged as copies with the spacing measured, and each copy is edited, its words selected and retyped, a different image or colour swapped in

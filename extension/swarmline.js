@@ -42,6 +42,8 @@
   ]);
   const MEDIA = new Set(["img", "svg", "video", "canvas", "picture", "iframe", "embed", "object"]);
   const LIVE_MEDIA = new Set(["video", "canvas", "iframe", "embed", "object"]); // shown without animation (see Stage.live)
+  // class or attribute names that scroll-animation libraries put on what they reveal
+  const REVEAL = /\b(wow|aos|data-aos|reveal|fade|animate|animated|sal|data-sal|scroll|data-scroll|motion|appear|inview|in-view|lazy|sr-)/i;
   const CONTROL = new Set(["input", "textarea", "select"]);
 
   const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
@@ -157,17 +159,32 @@
         `html[${ACTIVE}] [${SHOWN}]{visibility:visible !important}`;
     }
     hide() {
-      (document.head || document.documentElement).appendChild(this.style);
+      const head = document.head || document.documentElement;
+      head.appendChild(this.style);
+      // transitions off while we read the page: with `transition: all` on an element,
+      // lifting our hiding rule starts a visibility transition whose first instant still
+      // reads "hidden", so the element would look hidden to us when it isn't
+      this.calm = document.createElement("style");
+      this.calm.setAttribute("data-swarmline", "");
+      this.calm.textContent = "*,*::before,*::after{transition:none !important}";
+      head.appendChild(this.calm);
+      this.calm.disabled = true;
       document.documentElement.setAttribute(ACTIVE, "");
     }
     // read the page as it really is (our hiding rule off for a moment, never painted)
     peek(fn) {
       const was = this.style.disabled;
+      const calm = this.needCalm && this.calm && this.calm.isConnected ? this.calm : null; // only on pages that need it
+      if (calm) calm.disabled = false;
       this.style.disabled = true;
       try {
         return fn();
       } finally {
         this.style.disabled = was;
+        if (calm) {
+          void document.documentElement.offsetWidth; // settle back on the hidden state first
+          calm.disabled = true;
+        }
       }
     }
     show(el) {
@@ -225,6 +242,7 @@
       for (const el of this.marked) el.removeAttribute(SHOWN);
       this.marked = [];
       this.style.remove();
+      if (this.calm) this.calm.remove();
     }
   }
 
@@ -260,6 +278,15 @@
       this.host = host;
       this.stage = stage;
       this.seen = new WeakSet();
+      this.deferred = new Map(); // hidden by the page for now (scroll-reveal): element -> { at, dirty }
+      // reveal libraries (WOW, AOS...) show an element by changing its style or class: watch
+      // just that, so the page is only re-read when something may have appeared
+      this.mo = typeof MutationObserver === "function" ? new MutationObserver((list) => {
+        for (const m of list) {
+          const d = this.deferred.get(m.target);
+          if (d) d.dirty = true;
+        }
+      }) : null;
       this.boxOf = new WeakMap();
       this.flowRoots = new WeakSet();
       this.count = 0;
@@ -372,7 +399,7 @@
       };
 
       // under: the solid colour painted behind this element, or null over images/gradients
-      const visit = (el, parent, fixed, under, inFlow) => {
+      const visit = (el, parent, fixed, under, inFlow, hid) => {
         if (this.count >= MAX_UNITS) return;
         const tag = el.localName;
         if (SKIP.has(tag) || el === this.host || el.hasAttribute(GHOST)) return;
@@ -380,10 +407,11 @@
         const d = s.display;
         if (d === "none") return;
         if (d === "contents") {
-          for (const k of el.children) visit(k, parent, fixed, under, inFlow);
+          for (const k of el.children) visit(k, parent, fixed, under, inFlow, hid);
           return;
         }
-        if (parseFloat(s.opacity) < 0.04 && !this.stage.fading.has(el)) return;
+        const faint = parseFloat(s.opacity) < 0.04 && !this.stage.fading.has(el);
+        if (faint && fixed) return;
         const isFixed = fixed || s.position === "fixed" || s.position === "sticky" || !env.owns(el);
         const r = el.getBoundingClientRect();
         let inBand = true;
@@ -392,6 +420,23 @@
           const y1 = toContent(r.bottom);
           inBand = y1 > band.top && y0 < band.bottom;
         }
+        // hidden by the page itself, in the page's flow: most often content that animates in
+        // as it's scrolled to. Remember it; it is read again once it shows.
+        const hiddenHere = s.visibility !== "visible" && !hid;
+        // a visibility transition here means our reads need transitions paused (see Stage.hide)
+        if (hiddenHere && !this.stage.needCalm && /all|visibility/.test(s.transitionProperty) && /[1-9]/.test(s.transitionDuration)) this.stage.needCalm = true;
+        // (menus, tooltips, dialogs and tiny bits are hidden on purpose: not waited for)
+        if ((faint || hiddenHere) && !isFixed && inBand && r.width >= 40 && r.height >= 16 && !this.seen.has(el) && !this.deferred.has(el) &&
+          !el.closest(`nav,header,dialog,[popover],[role="menu"],[role="tooltip"],[role="dialog"],[aria-hidden="true"]`)) {
+          // worth waiting for only if it looks like a scroll-reveal target (a library marker, or an
+          // inline opacity:0 / visibility:hidden set by script); anything else is just re-checked
+          const sty = el.getAttribute("style") || "";
+          const sig = (el.getAttribute("class") || "") + " " + [...el.attributes].map((x) => x.name).join(" ");
+          const likely = REVEAL.test(sig) || /opacity:\s*0(\.0*)?\s*(;|$)|visibility:\s*hidden/i.test(sty);
+          this.deferred.set(el, { at: null, dirty: false, likely });
+          if (this.mo) this.mo.observe(el, { attributes: true, attributeFilter: ["style", "class"] });
+        }
+        if (faint) return;
         const show = s.visibility === "visible" && r.width >= 2 && r.height >= 2 && inBand;
         const isMedia = MEDIA.has(tag);
         const isControl = CONTROL.has(tag);
@@ -465,8 +510,9 @@
         else if (alphaOf(bg) > 0.03) kidUnder = null;
         const kidParent = boxUnit || parent;
         const kidFlow = madeText || flowPiece || this.flowRoots.has(el);
-        for (const k of el.children) visit(k, kidParent, isFixed, kidUnder, kidFlow);
-        if (el.shadowRoot) for (const k of el.shadowRoot.children) visit(k, kidParent, isFixed, kidUnder, kidFlow);
+        const kidHid = hid || s.visibility !== "visible";
+        for (const k of el.children) visit(k, kidParent, isFixed, kidUnder, kidFlow, kidHid);
+        if (el.shadowRoot) for (const k of el.shadowRoot.children) visit(k, kidParent, isFixed, kidUnder, kidFlow, kidHid);
       };
 
       let pageBg = "rgb(255, 255, 255)";
@@ -476,7 +522,7 @@
           break;
         }
       }
-      if (body) for (const k of body.children) visit(k, null, false, pageBg, false);
+      if (body) for (const k of body.children) visit(k, null, false, pageBg, false, false);
       return out;
     }
 
@@ -1838,7 +1884,7 @@ canvas.off{pointer-events:none}
       }
 
       this.stepReveals(dt);
-      this.stepGrid(dt, top, v);
+      this.checkDeferred(dt, top, v);
       if (this.jump) {
         const J = this.jump;
         J.t += dt;
@@ -1929,6 +1975,8 @@ canvas.off{pointer-events:none}
           if (u.kind !== "text" && u.kind !== "dup" && u.kind !== "guide") {
             u.swap = !!u.inCopy && !!u.inCopy.src && !u.dupSame && !u.line;
             u.jx = rand(-6, 6);
+            // now and then the box's edges are pulled out as long guide lines while it's drawn
+            u.edges = (u.kind === "box" || u.kind === "media") && !u.inCopy && u.w > 60 && u.h > 30 && Math.random() < 0.4;
           }
           if (u.kind === "text") {
             u.edit = !!u.inCopy && !!u.inCopy.src && !u.dupSame; // only a real copy is edited
@@ -2103,6 +2151,17 @@ canvas.off{pointer-events:none}
       if (!pending && viewDone) want = 1150 * sp; // the whole screen is finished: on to the next, quickly
       else if (!upper) want = 620 * sp; // the section you're reading is done: hurry the next one up
       else want = clamp(150 - upper * 6, 34, 150) * sp; // building here: creep, so it's built as it rises
+      // something here is still animating in: slow down, but only for a moment per screen
+      if (this.deferHold) {
+        if (this.holdAt == null || Math.abs(top - this.holdAt) > v.h * 0.6) {
+          this.holdAt = top;
+          this.holdUsed = 0;
+        }
+        if (this.holdUsed < 1.2) {
+          this.holdUsed += dt;
+          want = Math.min(want, 90 * sp);
+        }
+      }
       const c = this.cruise || 0;
       this.cruise = c + (want - c) * (1 - Math.exp(-dt * (want > c ? 1.4 : 3.2)));
       // never leave unfinished work behind: a hard limit that shrinks as the first unfinished
@@ -2481,6 +2540,55 @@ canvas.off{pointer-events:none}
         if (!side) u.el.animate([{ opacity: 0.6 }, {}], { duration: 620 / this.speed, easing: "ease-out" });
       } catch (_) {}
     }
+    checkDeferred(dt, top, v) {
+      const D = this.scanner.deferred;
+      if (!D.size) {
+        this.deferHold = false;
+        return;
+      }
+      this.deferT = (this.deferT || 0) - dt;
+      if (this.deferT > 0) return;
+      this.deferT = 0.25;
+      let hold = false;
+      let dirty = false;
+      const here = [];
+      let n = 0;
+      for (const [el, d] of D) {
+        if (++n > 600) break;
+        if (!el.isConnected) {
+          D.delete(el);
+          continue;
+        }
+        const r = el.getBoundingClientRect();
+        if (r.bottom <= v.y || r.top >= v.y + v.h * 0.9) continue;
+        if (d.at == null) d.at = this.time;
+        here.push([el, d, r]);
+        if (d.dirty) dirty = true;
+      }
+      const found = [];
+      if (here.length && (dirty || this.time - (this.deferPeekAt || 0) > 1.5)) {
+        this.deferPeekAt = this.time;
+        this.stage.peek(() => {
+          for (const [el, d, r] of here) {
+            d.dirty = false;
+            const c = getComputedStyle(el);
+            if (c.visibility === "visible" && parseFloat(c.opacity) >= 0.04 && r.width >= 2 && r.height >= 2) {
+              const y0 = r.top - v.y + top;
+              found.push({ top: y0 - 4, bottom: y0 + r.height + 4 });
+              D.delete(el);
+            }
+          }
+        });
+      }
+      for (const [el, d] of here) {
+        if (!D.has(el)) continue;
+        if (this.time - d.at < 2.2) hold = hold || d.likely;
+        else D.delete(el); // still hidden after a good look: not meant to show yet
+      }
+      this.deferHold = hold;
+      for (const band of found) this.register(this.scanner.scan(band));
+    }
+
     stepReveals(dt) {
       if (!this.reveals.length) return;
       let n = 0;
@@ -3115,7 +3223,6 @@ canvas.off{pointer-events:none}
         const R = rects.get(u);
         if (R) this.mark(g, u, R);
       }
-      this.drawGrid(g, v);
       this.drawGuides(g, v, top);
       this.drawRulers(g, v, top);
       const sheetA = this.intro < 1 ? clamp((this.intro - 0.3) / 0.5, 0, 1) : 1;
@@ -3376,6 +3483,7 @@ canvas.off{pointer-events:none}
           }
           g.restore();
         }
+        if (u.edges && u.phase === 0 && dw > 2 && dh > 2) this.edgeGuides(g, x, y, dw, dh);
         this.sel(g, x, y, dw, dh, INK, true, true);
         return;
       }
@@ -3446,6 +3554,27 @@ canvas.off{pointer-events:none}
       this.badge(g, String(gap), horiz ? (p0[0] + p1[0]) / 2 : p0[0] + 18, horiz ? p0[1] + 8 : (p0[1] + p1[1]) / 2 - 9, MEASURE);
     }
 
+    // the edges of a box being drawn, run out across the screen as thin guide lines
+    edgeGuides(g, x, y, w, h) {
+      g.save();
+      g.lineWidth = 1;
+      g.strokeStyle = rgba(INK, 0.34);
+      g.beginPath();
+      for (const gx of [x, x + w]) {
+        g.moveTo(Math.round(gx) + 0.5, 0);
+        g.lineTo(Math.round(gx) + 0.5, this.H);
+      }
+      g.stroke();
+      g.strokeStyle = rgba(INK, 0.2);
+      g.beginPath();
+      for (const gy of [y, y + h]) {
+        g.moveTo(0, Math.round(gy) + 0.5);
+        g.lineTo(this.W, Math.round(gy) + 0.5);
+      }
+      g.stroke();
+      g.restore();
+    }
+
     // an image placeholder: a light frame with a small picture icon in the middle
     placeholder(g, x, y, w, h, a) {
       g.save();
@@ -3473,68 +3602,6 @@ canvas.off{pointer-events:none}
         g.beginPath(); // the sun
         g.arc(cx + s * 0.18, cy - s * 0.17, s * 0.07, 0, TAU);
         g.fill();
-      }
-      g.restore();
-    }
-
-    // The layout grid of the screen being built: the content area found from the pieces on
-    // screen, split into twelve columns, fading in while there's work and out when it's done.
-    stepGrid(dt, top, v) {
-      const G = this.grid || (this.grid = { a: 0, l: 0, r: 0, tl: 0, tr: 0, t: 0, work: 0, ok: false });
-      G.t -= dt;
-      if (G.t <= 0) {
-        G.t = 0.5;
-        const ls = [];
-        const rs = [];
-        let work = 0;
-        for (const u of this.units) {
-          if (u.fixed || u.kind === "guide" || u.kind === "dup" || !u.w || u.w >= v.w * 0.9 || u.w < 8) continue;
-          if (u.y > top + v.h || u.y + u.h < top) continue;
-          ls.push(u.left0);
-          rs.push(u.left0 + u.w);
-          if (u.state !== 2) work++;
-        }
-        G.work = work;
-        if (ls.length >= 6) {
-          ls.sort((a, b) => a - b);
-          rs.sort((a, b) => a - b);
-          const l = ls[Math.floor(ls.length * 0.08)] - v.x;
-          const r = rs[Math.ceil(rs.length * 0.92) - 1] - v.x;
-          if (r - l > v.w * 0.35) {
-            if (!G.ok) {
-              G.l = l;
-              G.r = r;
-            }
-            G.tl = l;
-            G.tr = r;
-            G.ok = true;
-          }
-        }
-      }
-      if (G.ok) {
-        const k = 1 - Math.exp(-dt * 3);
-        G.l += (G.tl - G.l) * k;
-        G.r += (G.tr - G.r) * k;
-      }
-      const want = G.ok && G.work > 2 && !this.outro && this.intro >= 1 ? 1 : 0;
-      G.a += (want - G.a) * (1 - Math.exp(-dt * (want ? 2.5 : 1.6)));
-    }
-    drawGrid(g, v) {
-      const G = this.grid;
-      if (!G || !G.ok || G.a < 0.02) return;
-      const cols = 12;
-      const w = (G.r - G.l) / cols;
-      const ink = this.dark ? "255,255,255" : "47,107,255";
-      g.save();
-      g.lineWidth = 1;
-      for (let i = 0; i <= cols; i++) {
-        const x = Math.round(v.x + G.l + w * i) + 0.5;
-        const edge = i === 0 || i === cols;
-        g.strokeStyle = "rgba(" + ink + "," + ((edge ? (this.dark ? 0.3 : 0.24) : this.dark ? 0.13 : 0.11) * G.a).toFixed(3) + ")";
-        g.beginPath();
-        g.moveTo(x, v.y);
-        g.lineTo(x, v.y + v.h);
-        g.stroke();
       }
       g.restore();
     }
@@ -3662,6 +3729,7 @@ canvas.off{pointer-events:none}
         if (!quick) this.sfx.release();
         this.sfx.close(quick ? 0.1 : 0.8);
       }
+      if (this.scanner && this.scanner.mo) this.scanner.mo.disconnect();
       this.stage.restore(); // the page is always fully back
       const host = this.host;
       host.style.setProperty("transition", `opacity ${quick ? 0.15 : 0.3}s ease`, "important");
