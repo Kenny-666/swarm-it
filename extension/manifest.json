@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Swarmline – Watch Any Website Build Itself",
   "short_name": "Swarmline",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "One click and a swarm of cursors builds any website live: boxes drawn, text typed, parts duplicated, then it’s live again.",
   "minimum_chrome_version": "104",
   "action": {

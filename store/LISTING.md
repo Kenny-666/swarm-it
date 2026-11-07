@@ -6,7 +6,7 @@ Everything to paste into the [Developer Dashboard](https://chrome.google.com/web
 
 ## Package
 
-Upload `dist/swarmline-1.0.0.zip` (build it with `npm run package`).
+Upload `dist/swarmline-1.0.1.zip` (build it with `npm run package`).
 
 ## Store listing tab
 

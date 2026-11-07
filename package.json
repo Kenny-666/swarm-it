@@ -1,6 +1,6 @@
 {
   "name": "swarmline",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "private": true,
   "description": "Chrome extension: watch a swarm build any website, live, in your browser.",
   "type": "module",

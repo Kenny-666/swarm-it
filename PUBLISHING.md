@@ -8,7 +8,7 @@ All paths are inside `H:\swarm design\swarmline`.
 
 | What | Where | Used for |
 | --- | --- | --- |
-| **The extension package** | `dist\swarmline-1.0.0.zip` | Upload to the Chrome Web Store (built by `npm run package`) |
+| **The extension package** | `dist\swarmline-1.0.1.zip` (the number follows `"version"` in `extension\manifest.json`) | Upload to the Chrome Web Store (built by `npm run package`) |
 | **Listing text, ready to paste** | `store\LISTING.md` | Every field of the store dashboard: description, privacy answers, URLs |
 | Store icon | `store\store-icon-128.png` | Store listing → Store icon |
 | Screenshots 1–5 | `store\screenshot-1.png` … `screenshot-5.png` | Store listing → Screenshots (upload in order) |
@@ -86,7 +86,7 @@ Don't submit to the store until the privacy page loads. Reviewers open it.
 
 ## Step 4: create the listing (20 minutes)
 
-1. Dashboard → **Items → + New item** → upload **`dist\swarmline-1.0.0.zip`**.
+1. Dashboard → **Items → + New item** → upload the zip from **`dist\`** (for example `dist\swarmline-1.0.1.zip`).
 2. Fill in each tab. Every value is in **`store\LISTING.md`**, so copy and paste from there:
 
    **Store listing tab**
