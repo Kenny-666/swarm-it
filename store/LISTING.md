@@ -1,4 +1,4 @@
-# Chrome Web Store listing: Swarmline
+# Chrome Web Store listing: Swarm It!
 
 Everything to paste into the [Developer Dashboard](https://chrome.google.com/webstore/devconsole), field by field. It matches what the extension actually does. See [`PUBLISHING.md`](../PUBLISHING.md) for the order to do things in.
 
@@ -14,8 +14,8 @@ Upload `dist/swarmline-1.0.1.zip` (build it with `npm run package`).
 
 | Field | Value |
 | --- | --- |
-| **Title** (from the manifest) | Swarmline – Watch Any Website Build Itself |
-| **Summary** (from the manifest) | One click and a swarm of cursors builds any website live: boxes drawn, text typed, parts duplicated, then it’s live again. |
+| **Title** (from the manifest) | Swarm It! – Watch Any Website Build Itself |
+| **Summary** (from the manifest) | 一键启动，鼠标指针群实时搭建任意网站：绘制方框、输入文字、复制组件，随后即可直接使用。 |
 | **Category** | Developer Tools |
 | **Language** | English |
 
@@ -50,7 +50,7 @@ Great for:
 • Design and front-end demos and walkthroughs
 • Teaching layout and visual hierarchy
 
-Private by design: Swarmline runs only on the tab you start it on, sends nothing anywhere and stores nothing. When you exit, the page is exactly as it was.
+Private by design: Swarm It! runs only on the tab you start it on and sends nothing anywhere. It stores only your local animation preferences; when you exit, the page is exactly as it was.
 
 Shortcuts: Alt+Shift+L start or stop · T auto-tour · F finish · M sound · H hide or show the controls · Esc exit.
 
@@ -96,6 +96,7 @@ Swarmline plays an animation of the current web page being built by a swarm of c
 | --- | --- |
 | `activeTab` | Lets Swarmline run on the tab where the user clicks the toolbar button or presses the shortcut, and only then. It has no access to any other tab or site. |
 | `scripting` | Injects Swarmline's bundled script (swarmline.js) into that tab to play the build animation over the page. |
+| `storage` | Saves only local preferences for control visibility, auto-tour, speed, sound and the first-use shortcut hint. It does not store website content or personal data. |
 
 **Host permissions:** none requested.
 

@@ -27,8 +27,31 @@
   const SANS = 'Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
   const MAX_UNITS = 3000;
   const CHAR_BUDGET = 9000; // exact letter positions per scan; past that they're estimated
-  // toolbar placement for this tab only: kept in memory, never stored
-  const prefs = { hudHidden: false, hudPos: null };
+  // Toolbar placement is intentionally per-tab; the remaining choices persist locally.
+  const prefs = { hudHidden: true, hudPos: null, tour: true, speed: null, sound: true, guideSeen: false, ready: false };
+  const PREF_KEYS = ["hudHidden", "tour", "speed", "sound", "guideSeen"];
+  const storage = typeof chrome !== "undefined" && chrome.storage && chrome.storage.local;
+  const savePrefs = () => {
+    if (!storage) return;
+    const values = Object.fromEntries(PREF_KEYS.map((key) => [key, prefs[key]]));
+    storage.set(values).catch(() => {});
+  };
+  const loadPrefs = () => {
+    if (!storage) {
+      prefs.ready = true;
+      return;
+    }
+    storage.get(PREF_KEYS).then((saved) => {
+      if (typeof saved.hudHidden === "boolean") prefs.hudHidden = saved.hudHidden;
+      if (typeof saved.tour === "boolean") prefs.tour = saved.tour;
+      if ([1, 2, 3].includes(saved.speed)) prefs.speed = saved.speed;
+      if (typeof saved.sound === "boolean") prefs.sound = saved.sound;
+      prefs.guideSeen = saved.guideSeen === true;
+    }).catch(() => {}).finally(() => {
+      prefs.ready = true;
+      if (app) app.applyPreferences();
+    });
+  };
   const MEASURE = "#F43F5E"; // spacing measurements while a copy is dragged
   const INK = "#2F6BFF"; // the one colour every drawing mark uses: a design tool's selection blue
   const rand = (a, b) => a + Math.random() * (b - a);
@@ -45,6 +68,7 @@
   // class or attribute names that scroll-animation libraries put on what they reveal
   const REVEAL = /\b(wow|aos|data-aos|reveal|fade|animate|animated|sal|data-sal|scroll|data-scroll|motion|appear|inview|in-view|lazy|sr-)/i;
   const CONTROL = new Set(["input", "textarea", "select"]);
+  const ICON_URL = typeof chrome !== "undefined" && chrome.runtime ? chrome.runtime.getURL("icons/icon128.png") : "";
 
   const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
   const inkOn = (hex) => {
@@ -571,42 +595,47 @@
 *{box-sizing:border-box}
 canvas{position:fixed;left:0;top:0;width:100vw;height:100vh;pointer-events:auto;cursor:default}
 canvas.off{pointer-events:none}
-.hud{position:fixed;left:50%;bottom:22px;display:flex;align-items:center;gap:8px;padding:7px 7px 9px 9px;border-radius:16px;background:linear-gradient(180deg,rgba(26,28,40,.95),rgba(14,15,22,.95));-webkit-backdrop-filter:blur(16px) saturate(150%);backdrop-filter:blur(16px) saturate(150%);box-shadow:0 18px 44px rgba(0,0,0,.34),inset 0 0 0 1px rgba(255,255,255,.08);color:#F4F5F8;font:500 12px/1 ${SANS};pointer-events:auto;opacity:0;transform:translate(-50%,14px);transition:opacity .45s ease,transform .45s cubic-bezier(.2,.8,.2,1);user-select:none;white-space:nowrap;overflow:hidden}
+.hud{position:fixed;left:50%;bottom:20px;display:flex;align-items:center;gap:10px;padding:6px 6px 6px 10px;border-radius:12px;background:rgba(30,30,30,.94);-webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px);box-shadow:0 10px 30px rgba(0,0,0,.28),inset 0 0 0 1px rgba(255,255,255,.07);color:#fff;font:500 12px/1 ${SANS};pointer-events:auto;opacity:0;transform:translate(-50%,18px);transition:opacity .45s ease,transform .45s cubic-bezier(.2,.8,.2,1);user-select:none;white-space:nowrap}
 .hud.on{opacity:1;transform:translate(-50%,0)}
-.hud .mark{width:26px;height:26px;flex:none;display:block}
-.hud .bar{position:absolute;left:0;right:0;bottom:0;height:3px;background:rgba(255,255,255,.06);overflow:hidden}
-.hud .bar i{display:block;height:100%;width:0;background:linear-gradient(90deg,#FF5A6E,#A46BFF 55%,#3D9BFF);transition:width .35s ease}
-.hud button.snd{display:flex;align-items:center;gap:6px;padding:7px 9px}
-.hud button.snd.off{color:#7D8496}
-.hud button.snd.tap{background:#2F6BFF;animation:hudpulse 1.6s ease-in-out infinite}
-@keyframes hudpulse{50%{box-shadow:0 0 0 4px rgba(47,107,255,.3)}}
-.meta{display:flex;flex-direction:column;gap:4px;padding:0 8px 0 4px;min-width:108px}
-.meta .t{font-weight:650;color:#fff;display:flex;align-items:center;gap:6px}
+.hud .mark{width:24px;height:24px;flex:none;display:block;border-radius:7px}
+.hud .bar{width:64px;height:3px;flex:none;border-radius:2px;background:#3a3a3a;overflow:hidden}
+.hud .bar i{display:block;height:100%;width:0;background:#0D99FF;transition:width .35s ease}
+.hud button.snd{display:flex;align-items:center;gap:6px;padding:6px 8px}
+.hud button.snd.off{color:#8a8a8a}
+.hud button.snd.tap{background:#0D99FF;animation:hudpulse 1.6s ease-in-out infinite}
+@keyframes hudpulse{50%{box-shadow:0 0 0 4px rgba(13,153,255,.28)}}
+.meta{display:flex;align-items:center;gap:7px;padding:0 1px 0 2px;color:#cfcfcf;font-variant-numeric:tabular-nums}
+.meta .t{font-weight:500;color:#cfcfcf;display:flex;align-items:center;gap:7px}
+.meta .t b{color:#fff;font-weight:600}
 .meta .t i{width:7px;height:7px;border-radius:50%;background:#19D3A2;flex:none;animation:livepulse 1.8s ease-out infinite}
 @keyframes livepulse{0%{box-shadow:0 0 0 0 rgba(25,211,162,.55)}100%{box-shadow:0 0 0 6px rgba(25,211,162,0)}}
-.crew{position:relative;flex:none;width:152px;height:24px;margin-right:6px}
-.crew .site{position:absolute;left:0;top:1px;width:22px;height:22px;border-radius:50%;background:#F1F2F5;display:grid;place-items:center;overflow:hidden;box-shadow:0 0 0 2px #181A24;color:#14151C;font:750 11px/1 ${SANS};text-transform:uppercase}
-.crew .site img{width:14px;height:14px;object-fit:contain;filter:grayscale(1) contrast(1.15)}
-.crew .av{--x:0px;--s:.4;position:absolute;left:0;top:1px;width:22px;height:22px;border-radius:50%;display:grid;place-items:center;font:700 11px/1 ${SANS};box-shadow:0 0 0 2px #181A24;opacity:0;transform:translateX(var(--x)) scale(var(--s));transition:transform .5s cubic-bezier(.3,1.3,.4,1),opacity .3s ease}
+.crew{position:relative;flex:none;width:130px;height:22px;margin-right:0}
+.crew .site{position:absolute;left:0;top:0;width:20px;height:20px;border-radius:50%;background:#F1F2F5;display:grid;place-items:center;overflow:hidden;box-shadow:0 0 0 2px #1e1e1e;color:#14151C;font:750 10px/1 ${SANS};text-transform:uppercase}
+.crew .site img{width:13px;height:13px;object-fit:contain;filter:grayscale(1) contrast(1.15)}
+.crew .av{--x:0px;--s:.4;position:absolute;left:0;top:0;width:20px;height:20px;border-radius:50%;display:grid;place-items:center;font:700 10px/1 ${SANS};box-shadow:0 0 0 2px #1e1e1e;opacity:0;transform:translateX(var(--x)) scale(var(--s));transition:transform .5s cubic-bezier(.3,1.3,.4,1),opacity .3s ease}
 .crew .av.in{--s:1;opacity:1}
-.crew .more{--x:0px;position:absolute;left:0;top:1px;height:22px;min-width:22px;padding:0 6px;border-radius:11px;display:grid;place-items:center;background:#2A2D3B;color:#C9CED9;font:650 10px/1 ${SANS};font-variant-numeric:tabular-nums;box-shadow:0 0 0 2px #181A24;transform:translateX(var(--x));transition:transform .5s cubic-bezier(.3,1.3,.4,1),opacity .3s ease}
+.crew .more{--x:0px;position:absolute;left:0;top:0;height:20px;min-width:20px;padding:0 5px;border-radius:10px;display:grid;place-items:center;background:#2c2c2c;color:#cfcfcf;font:650 10px/1 ${SANS};font-variant-numeric:tabular-nums;box-shadow:0 0 0 2px #1e1e1e;transform:translateX(var(--x));transition:transform .5s cubic-bezier(.3,1.3,.4,1),opacity .3s ease}
 .crew .more[hidden]{display:grid;opacity:0}
 @media (prefers-reduced-motion:reduce){.crew .av,.crew .more{transition:opacity .2s}.meta .t i{animation:none}}
-.meta .s{color:#9CA3B4;font:500 11px/1 ${SANS};font-variant-numeric:tabular-nums}
-.hud button{all:unset;cursor:pointer;padding:8px 11px;border-radius:10px;color:#F4F5F8;background:rgba(255,255,255,.07);font:550 12px/1 ${SANS};transition:background .15s,color .15s}
-.hud button:hover{background:rgba(255,255,255,.14)}
-.hud button:focus-visible{outline:2px solid #2F6BFF;outline-offset:1px}
-.hud button.on{background:#2F6BFF;color:#fff}
-.hud button.on:hover{background:#4A7FFF}
-.hud button.pri{background:linear-gradient(90deg,#FF5A6E,#A46BFF 55%,#3D9BFF);color:#fff;font-weight:650}
+.meta .s{color:#cfcfcf;font:500 12px/1 ${SANS};font-variant-numeric:tabular-nums}
+.hud button{all:unset;cursor:pointer;padding:7px 10px;border-radius:8px;background:#2c2c2c;color:#fff;font:500 12px/1 ${SANS};transition:background .15s}
+.hud button:hover{background:#3a3a3a}
+.hud button:focus-visible{outline:2px solid #0D99FF;outline-offset:1px}
+.hud button.on{background:rgba(13,153,255,.22);color:#8fd0ff}
+.hud button.on:hover{background:rgba(13,153,255,.32)}
+.hud button.pri{background:#0D99FF;color:#fff;font-weight:600}
+.hud button.pri:hover{background:#2aa6ff}
 .hud button[hidden]{display:none}
-.hud .x{padding:8px 10px;color:#9CA3B4;background:transparent}
+.hud .x{padding:7px 9px;color:#aaa;background:transparent}
 .hud{cursor:grab;touch-action:none}
 .hud.dragging{cursor:grabbing;transition:opacity .45s ease}
 .hud.placed{bottom:auto;transform:translate(0,14px)}
 .hud.placed.on{transform:none}
 .hud.on.gone{opacity:0;pointer-events:none;transform:translate(-50%,14px)}
 .hud.placed.on.gone{transform:translate(0,14px)}
+.mini-progress{position:fixed;left:50%;bottom:10px;width:min(180px,36vw);height:3px;overflow:hidden;border-radius:3px;background:rgba(20,25,45,.2);opacity:0;transform:translate(-50%,5px);transition:opacity .25s ease,transform .25s ease;pointer-events:none}
+.mini-progress.on{opacity:1;transform:translate(-50%,0)}
+.mini-progress i{display:block;width:0;height:100%;border-radius:inherit;background:#34E99A;transition:width .35s ease}
 .hud .ico{display:inline-flex;align-items:center;justify-content:center;padding:6px 8px}
 .hud .ico svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
 .toast{position:fixed;left:50%;bottom:26px;transform:translate(-50%,10px);padding:9px 14px;border-radius:12px;background:rgba(16,17,22,.86);color:#F4F5F8;font:500 12px/1.2 ${SANS};box-shadow:0 14px 36px rgba(0,0,0,.28);opacity:0;pointer-events:none;transition:opacity .35s ease,transform .35s ease;white-space:nowrap}
@@ -1006,8 +1035,8 @@ canvas.off{pointer-events:none}
       this.env = new Env();
       this.stage = new Stage();
       this.dead = false;
-      this.speed = reduced() ? 3 : 1;
-      this.tour = true; // on by default: glide through the page on its own
+      this.speed = prefs.speed || (reduced() ? 3 : 1);
+      this.tour = prefs.tour; // on by default: glide through the page on its own
       this.units = [];
       this.waiting = [];
       this.active = [];
@@ -1037,6 +1066,7 @@ canvas.off{pointer-events:none}
       this.sfx = new Sound();
       this.sfx.init();
       this.bind();
+      this.observeDynamicContent();
       this.renderSoundBtn();
       this.sfx.intro();
       this.last = performance.now();
@@ -1060,18 +1090,19 @@ canvas.off{pointer-events:none}
       root.innerHTML = `<style>${STYLE}</style>
 <canvas aria-hidden="true"></canvas>
 <div class="hud" role="toolbar" aria-label="Swarmline">
-  <svg class="mark" viewBox="0 0 128 128" aria-hidden="true"><defs><linearGradient id="swl-g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#FF5470"/><stop offset=".52" stop-color="#9B4DFF"/><stop offset="1" stop-color="#2E6BFF"/></linearGradient></defs><rect width="128" height="128" rx="30" fill="url(#swl-g)"/><path d="M86 56 V44 a12 12 0 0 0 -12 -12 H32 a12 12 0 0 0 -12 12 V84 a12 12 0 0 0 12 12 H62" fill="none" stroke="#fff" stroke-width="10" stroke-linecap="round"/><path d="M35 62 H64" stroke="#fff" stroke-width="9" stroke-linecap="round"/><path d="M82 60 L82 93.6 L90.5 86 L96.1 98.5 L102.6 95.6 L97 83.3 L108.2 83.1 Z" fill="#fff" stroke="#24104F" stroke-width="3" stroke-linejoin="round"/></svg>
+  <img class="mark" src="${ICON_URL}" alt="" aria-hidden="true">
   <div class="meta" aria-live="polite"><span class="t"><i aria-hidden="true"></i><b>Live agents</b></span><span class="s">joining…</span></div>
   <div class="crew" aria-hidden="true"><span class="site"></span><span class="more" hidden></span></div>
+  <div class="bar" aria-hidden="true"><i></i></div>
   <button data-a="tour" class="${this.tour ? "on" : ""}" aria-pressed="${this.tour}" title="Glide down the page as it's built (T)">Auto-tour</button>
   <button data-a="speed" title="Build speed" aria-label="Build speed 1×">1×</button>
   <button data-a="sound" class="snd" title="Sound (M)" aria-label="Sound (M)"></button>
   <button data-a="finish" title="Show the finished page now (F)">Finish</button>
   <button data-a="replay" class="pri" hidden title="Build the page again">Replay</button>
   <button data-a="hide" class="ico" title="Hide the controls for a clean recording (H) · drag the bar to move it" aria-label="Hide controls"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3l18 18"/><path d="M10.6 5.1A10.5 10.5 0 0 1 12 5c6 0 9.5 7 9.5 7a17 17 0 0 1-3.2 4.1M6.6 6.6C3.9 8.4 2.5 12 2.5 12s3.5 7 9.5 7a9.6 9.6 0 0 0 5.4-1.6"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg></button>
-  <button data-a="close" class="x" title="Exit (Esc)" aria-label="Exit Swarmline">✕</button>
-  <div class="bar" aria-hidden="true"><i></i></div>
+  <button data-a="close" class="x" title="Exit (Esc)" aria-label="Exit Swarm It!">✕</button>
 </div>
+<div class="mini-progress" aria-hidden="true"><i></i></div>
 <div class="toast" role="status"></div>`;
       document.documentElement.appendChild(host);
       this.host = host;
@@ -1082,6 +1113,7 @@ canvas.off{pointer-events:none}
       this.$ = (s) => root.querySelector(s);
       this.$('[data-a="speed"]').textContent = this.speed + "×";
       this.toast = root.querySelector(".toast");
+      this.miniProgress = root.querySelector(".mini-progress");
       this.resize();
       if (prefs.hudPos) this.placeHud(prefs.hudPos.x, prefs.hudPos.y);
       if (prefs.hudHidden) this.hud.classList.add("gone");
@@ -1089,10 +1121,24 @@ canvas.off{pointer-events:none}
 
     // ---------------------------------------------------------------- toolbar
 
+    applyPreferences() {
+      this.speed = prefs.speed || (reduced() ? 3 : 1);
+      this.tour = prefs.tour;
+      this.setHud(!prefs.hudHidden, true, false);
+      this.$('[data-a="speed"]').textContent = this.speed + "×";
+      this.$('[data-a="speed"]').setAttribute("aria-label", `Build speed ${this.speed}×`);
+      this.setTour(this.tour, false);
+      if (this.sfx) {
+        this.sfx.setOn(prefs.sound);
+        this.renderSoundBtn();
+      }
+    }
+
     // hide or show the controls (H), e.g. for a clean screen recording
-    setHud(show, quiet) {
+    setHud(show, quiet, persist = true) {
       prefs.hudHidden = !show;
       this.hud.classList.toggle("gone", !show);
+      if (persist) savePrefs();
       if (!show && !quiet) this.say("Controls hidden · press <kbd>H</kbd> to bring them back");
     }
 
@@ -1173,6 +1219,8 @@ canvas.off{pointer-events:none}
         else if ((e.key === "h" || e.key === "H") && !e.ctrlKey && !e.metaKey && !e.altKey) this.setHud(prefs.hudHidden);
         else if ((e.key === "m" || e.key === "M") && !e.ctrlKey && !e.metaKey && !e.altKey) {
           this.sfx.setOn(!this.sfx.on);
+          prefs.sound = this.sfx.on;
+          savePrefs();
           this.renderSoundBtn();
         }
         this.unlockSound();
@@ -1211,6 +1259,8 @@ canvas.off{pointer-events:none}
         else if (a === "sound") {
           if (this.sfx.on && this.sfx.blocked) this.sfx.resume();
           else this.sfx.setOn(!this.sfx.on);
+          prefs.sound = this.sfx.on;
+          savePrefs();
           setTimeout(() => this.renderSoundBtn(), 60);
         }
         else if (a === "tour") this.setTour(!this.tour);
@@ -1218,6 +1268,8 @@ canvas.off{pointer-events:none}
         else if (a === "replay") replay();
         else if (a === "speed") {
           this.speed = this.speed >= 3 ? 1 : this.speed + 1;
+          prefs.speed = this.speed;
+          savePrefs();
           b.textContent = this.speed + "×";
           b.setAttribute("aria-label", `Build speed ${this.speed}×`);
         }
@@ -1246,13 +1298,38 @@ canvas.off{pointer-events:none}
       b.setAttribute("aria-label", tap ? "Tap for sound (M)" : b.title);
     }
 
-    setTour(on) {
+    setTour(on, persist = true) {
       this.tour = on;
+      prefs.tour = on;
+      if (persist) savePrefs();
       this.dwell = 0;
       if (!on) this.jump = null;
       const b = this.$('[data-a="tour"]');
       b.classList.toggle("on", on);
       b.setAttribute("aria-pressed", String(on));
+    }
+
+    showFirstRunGuide() {
+      if (this.guideShown || !prefs.ready || prefs.guideSeen) return;
+      this.guideShown = true;
+      prefs.guideSeen = true;
+      savePrefs();
+      this.say("<kbd>H</kbd> controls · <kbd>T</kbd> tour · <kbd>F</kbd> finish · <kbd>Esc</kbd> exit", 6200);
+    }
+
+    observeDynamicContent() {
+      this.route = location.href;
+      if (typeof MutationObserver !== "function" || !document.body) return;
+      this.dynamicMO = new MutationObserver((mutations) => {
+        for (const mutation of mutations) {
+          for (const node of mutation.addedNodes) {
+            if (node === this.host || (node.nodeType === 1 && node.closest && node.closest("swarmline-layer"))) continue;
+            this.dynamicDirty = true;
+            return;
+          }
+        }
+      });
+      this.dynamicMO.observe(document.body, { childList: true, subtree: true });
     }
 
     // ---------------------------------------------------------------- bands
@@ -1874,6 +1951,7 @@ canvas.off{pointer-events:none}
         if (this.sfx) this.sfx.start();
       }
 
+      this.showFirstRunGuide();
       if (this.outro) {
         this.outro.t = Math.min(1, this.outro.t + dt / 1.1);
         if (this.outro.t >= 1 && !this.outro.off) {
@@ -1883,6 +1961,12 @@ canvas.off{pointer-events:none}
         return;
       }
 
+      // Single-page apps can replace a route without unloading. Restore the current page
+      // instead of leaving its old animation overlay attached to the new route.
+      if (location.href !== this.route) {
+        stop(true);
+        return;
+      }
       this.stepReveals(dt);
       this.checkDeferred(dt, top, v);
       if (this.jump) {
@@ -1899,7 +1983,11 @@ canvas.off{pointer-events:none}
       // while the camera glides, "settled" means every quarter screen, not every pixel
       const drift = Math.abs((this.scanTop == null ? -1e9 : this.scanTop) - top);
       const settled = this.restFor > 0.12 && ((this.cruise || 0) > 0 ? drift > v.h * 0.25 : drift >= 1 || this.scanH !== env.height);
-      if (ahead || settled) {
+      // Lazy loaders and infinite lists append nodes after a band was first scanned.
+      // Scan the current viewport again once those additions have settled.
+      const dynamic = this.dynamicDirty && this.restFor > 0.12;
+      if (ahead || settled || dynamic) {
+        this.dynamicDirty = false;
         this.scanTop = Math.round(top);
         this.scanH = env.height;
         const band = { top: top - v.h * 0.1, bottom: top + v.h * (ahead ? 2.2 : 1.1) };
@@ -3615,6 +3703,10 @@ canvas.off{pointer-events:none}
       for (const b of this.bands) shown += Math.min(H, b.bottom) - Math.max(0, b.top);
       const frac = this.outro ? 1 : clamp(shown / H, 0, 1);
       this.$(".bar i").style.width = (frac * 100).toFixed(1) + "%";
+      if (this.miniProgress) {
+        this.miniProgress.querySelector("i").style.width = (frac * 100).toFixed(1) + "%";
+        this.miniProgress.classList.toggle("on", prefs.hudHidden && !this.outro && frac > 0 && frac < 1);
+      }
       const t = this.$(".meta .t b");
       const s = this.$(".meta .s");
       // the agents are the cursors on screen: more come in for a busy section, idle ones leave
@@ -3676,10 +3768,10 @@ canvas.off{pointer-events:none}
           a.style.color = inkOn(n.color);
           box.appendChild(a);
           this.avs.set(n.id, a);
-          a.style.setProperty("--x", 28 + i * 17 + "px");
+          a.style.setProperty("--x", 25 + i * 14 + "px");
           void a.offsetWidth; // start small at its place, then pop in
         }
-        a.style.setProperty("--x", 28 + i * 17 + "px");
+        a.style.setProperty("--x", 25 + i * 14 + "px");
         a.style.zIndex = String(10 - i);
         a.classList.add("in");
       }
@@ -3687,7 +3779,7 @@ canvas.off{pointer-events:none}
       const extra = here.length - shown.length;
       more.hidden = extra <= 0;
       if (extra > 0) more.textContent = "+" + extra;
-      more.style.setProperty("--x", 28 + shown.length * 17 + 4 + "px");
+      more.style.setProperty("--x", 25 + shown.length * 14 + 4 + "px");
     }
 
     // the site being built, as a round black-and-white badge: its favicon, or its initial
@@ -3730,6 +3822,7 @@ canvas.off{pointer-events:none}
         this.sfx.close(quick ? 0.1 : 0.8);
       }
       if (this.scanner && this.scanner.mo) this.scanner.mo.disconnect();
+      if (this.dynamicMO) this.dynamicMO.disconnect();
       this.stage.restore(); // the page is always fully back
       const host = this.host;
       host.style.setProperty("transition", `opacity ${quick ? 0.15 : 0.3}s ease`, "important");
@@ -3781,5 +3874,6 @@ canvas.off{pointer-events:none}
       return app;
     },
   };
+  loadPrefs();
   start();
 })();

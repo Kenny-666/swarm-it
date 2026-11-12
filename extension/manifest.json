@@ -1,12 +1,12 @@
 {
   "manifest_version": 3,
-  "name": "Swarmline – Watch Any Website Build Itself",
-  "short_name": "Swarmline",
+  "name": "Swarm It! – Watch Any Website Build Itself",
+  "short_name": "Swarm It!",
   "version": "1.0.1",
-  "description": "One click and a swarm of cursors builds any website live: boxes drawn, text typed, parts duplicated, then it’s live again.",
+  "description": "一键启动，鼠标指针群实时搭建任意网站：绘制方框、输入文字、复制组件，随后即可直接使用。",
   "minimum_chrome_version": "104",
   "action": {
-    "default_title": "Swarmline (Alt+Shift+L)",
+    "default_title": "Swarm It! (Alt+Shift+L)",
     "default_icon": {
       "16": "icons/icon16.png",
       "32": "icons/icon32.png",
@@ -25,7 +25,14 @@
   },
   "permissions": [
     "activeTab",
-    "scripting"
+    "scripting",
+    "storage"
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["icons/icon128.png"],
+      "matches": ["<all_urls>"]
+    }
   ],
   "commands": {
     "_execute_action": {

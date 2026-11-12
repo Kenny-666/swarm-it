@@ -53,11 +53,24 @@ try {
       return chrome.action.getBadgeText({ tabId: tab.id });
     }, page.url());
   const sheet = () => page.evaluate(() => !!document.querySelector("swarmline-layer"));
+  const extensionState = () => sw.evaluate(async (u) => {
+    const tab = (await chrome.tabs.query({})).find((t) => t.url === u);
+    const [{ result }] = await chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      func: () => ({ hidden: window.__swarmline?.app?.hud.classList.contains("gone") }),
+    });
+    return result;
+  }, page.url());
 
   const badge = await click();
   await sleep(400);
   check("toolbar click draws the page", (await sheet()) && badge === "", { badge });
   check("overlay is closed to page scripts", await page.evaluate(() => document.querySelector("swarmline-layer").shadowRoot === null));
+  check("controls start hidden", (await extensionState()).hidden === true);
+  await page.keyboard.press("h");
+  await sleep(150);
+  const savedPrefs = await sw.evaluate(() => chrome.storage.local.get(["hudHidden"]));
+  check("H shows controls and saves the choice", (await extensionState()).hidden === false && savedPrefs.hudHidden === false);
   await sleep(2500);
   await page.keyboard.press("f");
   await sleep(1600);

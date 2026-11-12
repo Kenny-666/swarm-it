@@ -1,87 +1,87 @@
-# Swarmline
+# Swarm It!
 
-**Watch a swarm of cursors build any website, live, in your browser.**
+**在浏览器中实时观看一群鼠标指针搭建任意网站。**
 
-![Swarmline building a page](store/marquee-1400x560.png)
+![Swarm It! 正在搭建网页](store/marquee-1400x560.png)
 
-Swarmline is a Chrome extension. Click it on any page and the page becomes a blank canvas in its own colours. A swarm of cursors then builds it back in reading order, the way designers work in a design tool: a crosshair drags out each box (with handles and a live size badge) before the real one fills in; text boxes are dragged out and typed letter by letter beside a parked I-beam (display headlines at full size, some mid-size headings growing into size); as some boxes are dragged out their edges run across the screen as thin guide lines; dividers are drawn with the pen tool; rulers slide in while red alignment guides are pulled out, and text is dragged onto them until it snaps; image frames are dragged out as placeholders with a picture icon and the picture scans in. Repeated components (cards in a grid, rows in a list, nav links, tabs, tags, icons) are built once, then Alt-dragged as copies with the gap measured; each copy lands showing the original's words, which are double-clicked, selected and retyped, and a different image or colour is swapped in with a click. Spare cursors wander, slip off-screen when they're not needed and come back when work appears, and when the page is done they orbit your own mouse pointer until you exit. Builds have a soft mallet soundtrack (M turns it off).
+Swarm It! 是一款 Chrome 扩展。在任意网页上点击它，页面会先变为保持自身配色的空白画布；随后，一群鼠标指针会按阅读顺序将页面逐步搭建回来，如同设计师在设计工具中工作：十字光标先拖出每个方框（带控制点和实时尺寸标记），再填入真实内容；文本框会在停驻的 I 形光标旁被逐字输入；某些方框在拖动时会延伸出细长的辅助线；分隔线由钢笔工具绘制；标尺滑入后拉出红色对齐辅助线，文本被拖至其上并自动吸附；图片框先作为带图片图标的占位符拖出，再扫描显示图像。重复组件（网格卡片、列表行、导航链接、标签、图标）会先搭建一个，再通过 Alt 拖拽复制并测量间距；每个副本会显示原始文字，再经双击、选择与重新输入完成更新，也可一键替换图片或颜色。空闲指针会游走、离开屏幕，在有工作时再次出现；页面完成后，它们会绕着你的鼠标指针移动，直到退出。构建过程带有柔和的木槌音效（按 `M` 关闭）。
 
-**Credits.** Swarmline's cursor motion and build style follow **Swarm Rebuild** by **Dhvanil Patel** ([swarm-cursors](https://github.com/DhvanilPatel/swarm-cursors)), a tribute to **[Swarm](https://califa.github.io/swarm-site/)** by **[Joel Califa](https://joelcalifa.com)**. 
+**致谢。** Swarm It! 的光标运动和构建风格参考了 **Dhvanil Patel** 的 **Swarm Rebuild**（[swarm-cursors](https://github.com/DhvanilPatel/swarm-cursors)）；后者是对 **Joel Califa** 的 [Swarm](https://califa.github.io/swarm-site/) 的致敬。
 
-Everything appears in place on the real page, so the result is always exactly the live site: its fonts, GSAP and CSS animations, video, canvases and links keep working throughout.
+所有内容都在真实页面中的原位显示，因此结果始终与线上网站一致：字体、GSAP 与 CSS 动画、视频、画布及链接在整个过程中都会持续工作。
 
-**Website:** https://imperfec-t.github.io/swarmline/ · **Privacy:** [PRIVACY.md](PRIVACY.md) · **License:** [LICENSE](LICENSE) (MIT for Swarmline's own code; the adapted parts stay their authors', see NOTICE)
+**网站：** https://imperfec-t.github.io/swarmline/ · **隐私政策：** [PRIVACY.md](PRIVACY.md) · **许可证：** [LICENSE](LICENSE)（Swarm It! 自有代码采用 MIT 许可证；改编部分仍归其原作者所有，详见 NOTICE）
 
-## Install (development)
+## 安装（开发环境）
 
-1. Open `chrome://extensions` and turn on **Developer mode**.
-2. Click **Load unpacked** and choose the [`extension/`](extension) folder (the one with `manifest.json`; not `dist/`).
-3. Pin Swarmline from the puzzle-piece menu.
+1. 打开 `chrome://extensions`，启用**开发者模式**。
+2. 点击**加载已解压的扩展程序**，选择 [`extension/`](extension) 文件夹（包含 `manifest.json` 的文件夹，而不是 `dist/`）。
+3. 在扩展程序菜单中固定 Swarm It!。
 
-## Use
+## 使用方法
 
-| | |
+| 操作 | 说明 |
 | --- | --- |
-| **Alt+Shift+L** or the toolbar button | Start (again to stop) |
-| **Auto-tour** / **T** | Scroll down the page in one continuous glide: slow while a section is being built, faster once it's done (on by default; T turns it off) |
-| **1× / 2× / 3×** | Build speed |
-| **Finish** / **F** | Show the finished page now |
-| **H** / eye button | Hide the controls for a clean screen recording (H brings them back) |
-| Drag the bar | Move the controls anywhere; double-click the bar to put it back |
-| **Sound** / **M** | Turn the build's sound on or off |
-| **Esc** / **✕** | Exit (the page is restored exactly) |
+| **Alt+Shift+L** 或工具栏按钮 | 启动；再次执行则停止 |
+| **自动导览** / **T** | 连续平滑地向下滚动：搭建当前区域时减速，完成后加速（默认开启；按 `T` 关闭） |
+| **1× / 2× / 3×** | 设置构建速度 |
+| **完成** / **F** | 立即显示完成后的页面 |
+| **H** / 眼睛按钮 | 显示控制栏（默认隐藏），或再次隐藏以便录屏；隐藏时仍保留极简进度线 |
+| 拖动控制栏 | 将控制栏移动到任意位置；双击控制栏可恢复到底部 |
+| **声音** / **M** | 开启或关闭构建音效 |
+| **Esc** / **✕** | 退出并完整还原页面 |
 
-The toolbar shows **Live agents**: the site's favicon in black and white, the initials of the agents on screen in their cursor colours (they trade places as they work), and how many are working. More agents come in for a busy section, and idle ones leave.
+工具栏会显示**实时代理**：黑白的网站图标、屏幕中代理的首字母（会在各自的光标颜色间切换位置）及工作数量。页面繁忙时会加入更多代理，空闲时则会离开。Swarm It! 会在当前浏览器中记住控制栏显示状态、导览、速度和声音偏好；首次使用时会短暂显示快捷键提示。
 
-Turn the tour off to scroll yourself: the swarm builds whatever comes to rest on screen. With *prefers-reduced-motion* it builds at 3× with a smaller swarm, and the tour jumps instead of gliding.
+关闭自动导览后，你可以自行滚动；指针群会搭建在屏幕中静止的内容。若系统启用了 *prefers-reduced-motion*，它会以较少的指针按 3× 速度构建，并使用跳转而非平滑导览。
 
-## How it works
+## 工作原理
 
-[`swarmline.js`](extension/swarmline.js) is one dependency-free content script, injected only when you click (`activeTab` + `scripting`):
+[`swarmline.js`](extension/swarmline.js) 是一个无依赖的内容脚本，仅在你点击扩展时通过 `activeTab` 和 `scripting` 注入：
 
-1. **Blank canvas.** The page fades to its own background colour. A small stylesheet hides every element (`visibility: hidden`, so the layout never moves) except the ones the swarm has put back, which carry a marker attribute. The page keeps running underneath.
-2. **Scan.** When the page comes to rest, the visible part of the DOM (including open shadow roots) is read into *units*: boxes (anything that paints a background, border or shadow), text blocks (their real line boxes and letter positions), media, form controls and icon glyphs. Repeated siblings (cards, rows, links, icons) are grouped for duplicating, and text that lines up gets an alignment guide.
-3. **Build.** Each unit is made by one cursor, step by step, at a tempo that rises with the backlog: boxes are dragged out with a crosshair, text is typed by clipping the real element to the letters written so far (`clip-path: path(…)`), dividers are drawn with the pen tool, image frames are dragged out as placeholders and the picture scans in. Typing runs on its own steady clock, slower for large type, so every letter can be read. Some boxes pull their edges out as long guide lines while they are drawn. Content the page itself reveals on scroll (scroll-animation libraries such as WOW or AOS) is remembered while it is still hidden; the camera slows while it is on screen, and it is built as soon as it appears. Guides are pulled from the rulers and text is dragged onto them until it snaps. Copies of a finished component are Alt-dragged into place as a look-alike, then the real copy takes over and whatever differs is selected and retyped or swapped. A child waits for the box it sits in.
-4. **Settle.** Once a stretch of the page is built, anything still hidden there (wrapper backgrounds, decoration) fades in gently, top to bottom.
-5. **Tour and finish.** Auto-tour never stops and starts. It reads the page a couple of screens ahead and keeps the camera moving: it creeps while there's work on screen, never leaves an unfinished piece behind, and speeds up once a section is done. Scroll the wheel yourself and it waits a moment, then carries on from where you are. At the end the stylesheet and markers are removed, the page is fully interactive again, the swarm orbits your mouse pointer, and the toolbar offers **Replay**.
+1. **空白画布。** 页面渐变为自身背景色。一个小型样式表会隐藏全部元素（使用 `visibility: hidden`，因此布局不会移动），只有已经被指针群恢复的、带标记属性的元素可见。页面会在底层持续运行。
+2. **扫描。** 当页面停止滚动时，会将可见 DOM 区域（包含开放的 Shadow Root）读取为多个*单元*：方框（绘制背景、边框或阴影的元素）、文本块（实际行框与字符位置）、媒体、表单控件和图标字形。重复的同级元素（卡片、行、链接、图标）会被归类以供复制，对齐的文本会获得对齐辅助线。
+3. **构建。** 每个单元都由一个光标分步完成，构建速度会随待处理内容增加：方框由十字光标拖出；文本通过裁剪真实元素至已输入字符的方式逐字显示（`clip-path: path(…)`）；分隔线由钢笔工具绘制；图片框先作为占位符拖出，再扫描显示图片。输入使用独立且稳定的时钟，大号文字会更慢，以便看清每个字符。部分方框在绘制时会把边缘延伸成长辅助线。网页本身在滚动时显示的内容（如 WOW 或 AOS 等滚动动画库）会在隐藏时被记录；镜头在其出现时减速，并立即构建。辅助线从标尺拉出，文本拖至其上后自动吸附。完成组件的副本通过 Alt 拖拽生成相似外观，之后真实副本接管，并对差异进行选择、重新输入或替换。子元素会等待其容器方框完成。
+4. **收束。** 页面的一段内容构建完成后，其中仍隐藏的元素（包装器背景、装饰等）会自上而下柔和淡入。
+5. **导览与完成。** 自动导览不会反复停启。它会提前读取接下来约两屏内容并持续移动镜头：屏幕中有工作时缓慢前进，不会留下未完成部分；一段内容完成后则加速。你自行滚动鼠标滚轮时，它会短暂等待，再从当前位置继续。结束后会移除样式表与标记，页面恢复完全交互，指针群绕着鼠标移动，工具栏会提供**重播**按钮。
 
-The cursors, selections, rulers and guides are drawn on a transparent `<canvas>` in a closed shadow root above the page. Exiting at any point (or any error) removes everything Swarmline added and puts the page back exactly as it was.
+光标、选区、标尺与辅助线均绘制在页面上方一个封闭 Shadow Root 内的透明 `<canvas>` 上。任意时刻退出（或出现错误）都会移除 Swarm It! 添加的所有内容，并将页面完整还原。
 
-## Project layout
+## 项目结构
 
-| Path | What it is |
+| 路径 | 内容 |
 | --- | --- |
-| `extension/` | The extension: `manifest.json` (MV3, `activeTab` + `scripting` only), `background.js`, `swarmline.js`, `icons/` |
-| `site/` | The public website: homepage, privacy policy, support (deployed to GitHub Pages) |
-| `store/` | Store listing copy ([`LISTING.md`](store/LISTING.md)), icon, screenshots, promo tiles |
-| `demo/index.html`, `demo/showcase.html` | Self-contained demo pages: a fictional studio (used by the tests) and a fictional SaaS product, Quillwave (used for the store screenshots) |
-| `scripts/` | `make-assets.mjs` (icon, captioned store screenshots, promo tiles), `package.mjs` (store zip), `preflight.mjs` (pre-submission checks), `build-site.mjs` (the website), `configure.mjs` (support email and store link) |
-| `tests/` | `smoke.mjs` (runs it on a page with Auto-tour; frames, timings, frame rate) and `extension.mjs` (the real extension) |
-| `PUBLISHING.md` | Step-by-step: from this folder to a live Web Store listing |
+| `extension/` | 扩展程序：`manifest.json`（MV3，仅含 `activeTab`、`scripting` 与本地偏好设置所需的 `storage` 权限）、`background.js`、`swarmline.js`、`icons/` |
+| `site/` | 公开网站：首页、隐私政策和支持页面（部署至 GitHub Pages） |
+| `store/` | 商店上架文案（[`LISTING.md`](store/LISTING.md)）、图标、截图与推广图 |
+| `demo/index.html`、`demo/showcase.html` | 独立演示页面：虚构工作室（测试使用）与虚构 SaaS 产品 Quillwave（商店截图使用） |
+| `scripts/` | `make-assets.mjs`（图标、带说明的商店截图、推广图）、`package.mjs`（商店压缩包）、`preflight.mjs`（提交前检查）、`build-site.mjs`（网站构建）、`configure.mjs`（支持邮箱与商店链接） |
+| `tests/` | `smoke.mjs`（使用自动导览运行页面，检查帧、时序和帧率）与 `extension.mjs`（真实扩展测试） |
+| `PUBLISHING.md` | 从当前文件夹发布到 Chrome 应用商店的步骤说明 |
 
-## Development
+## 开发
 
-Needs Node.js 20+ and Chrome.
+需要 Node.js 20+ 和 Chrome。
 
 ```sh
 npm install
-npm run check       # syntax check
-npm run test:all    # lint, demo smoke test and the real extension test
-npm run lint        # ESLint
-npm test            # smoke test on the demo page
-npm run test:site   # smoke test on a heavy real site (GSAP, Lenis, marquees)
-npm run test:ext    # real extension test
-npm run assets      # icons, screenshots, promo tiles, site images
-npm run package     # dist/swarmline-<version>.zip
-npm run preflight   # every check the store submission needs
+npm run check       # 语法检查
+npm run test:all    # ESLint、演示页面冒烟测试和真实扩展测试
+npm run lint        # 运行 ESLint
+npm test            # 演示页面冒烟测试
+npm run test:site   # 在复杂真实网站上进行冒烟测试（GSAP、Lenis、跑马灯）
+npm run test:ext    # 真实扩展测试
+npm run assets      # 生成图标、截图、推广图和网站图像
+npm run package     # 生成 dist/swarmline-<version>.zip
+npm run preflight   # 运行提交至商店所需的全部检查
 ```
 
-## Publishing
+## 发布
 
-See [PUBLISHING.md](PUBLISHING.md).
+请参阅 [PUBLISHING.md](PUBLISHING.md)。
 
-## Limits
+## 限制
 
-- Chrome doesn't allow extensions on `chrome://` pages, the Web Store or the PDF viewer; the button shows a × there.
-- The page can't be clicked while it's being built (so you can't hit a link you can't see); it's fully interactive again when the build finishes.
-- Past about 3,000 elements the page is built in coarser pieces (the end-of-screen sweep still brings everything back).
+- Chrome 不允许扩展程序在 `chrome://` 页面、Chrome 应用商店或 PDF 查看器中运行；此时按钮会显示 ×。
+- 页面构建期间无法点击页面内容（因此无法点击尚未可见的链接）；构建完成后会恢复完整交互。
+- 页面元素超过约 3,000 个时，会以较粗粒度构建（屏幕末尾的扫过效果仍会恢复全部内容）。

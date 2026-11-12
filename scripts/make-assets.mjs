@@ -19,45 +19,11 @@ const chromePath =
   process.env.CHROME_PATH ||
   ["C:/Program Files/Google/Chrome/Application/chrome.exe", "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome", "/usr/bin/google-chrome"].find((p) => fs.existsSync(p));
 
-// The mark: a browser window whose outline is still being drawn, with the pointer
-// at the end of the line it is drawing, a typed headline and a caret. Simplified
-// at 32px and 16px so it stays crisp in the toolbar.
-function iconSVG(size, { pad = 0 } = {}) {
-  const tiny = size <= 16;
-  const small = size <= 32;
-  // the pointer: classic arrow, tip at (0,0), pointing up-left
-  const ptr = "M0 0 L0 30 L7.6 23.2 L12.6 34.4 L18.4 31.8 L13.4 20.8 L23.4 20.6 Z";
-  // a window being drawn: the outline runs clockwise and stops where the pointer is
-  const frame = tiny
-    ? "M82 54 V42 a12 12 0 0 0 -12 -12 H32 a12 12 0 0 0 -12 12 V84 a12 12 0 0 0 12 12 H56"
-    : "M86 56 V44 a12 12 0 0 0 -12 -12 H32 a12 12 0 0 0 -12 12 V84 a12 12 0 0 0 12 12 H62";
-  const pt = tiny ? { x: 76, y: 58, s: 1.5, w: 4 } : small ? { x: 82, y: 60, s: 1.12, w: 3 } : { x: 83, y: 60, s: 1, w: 2.6 };
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="${-pad} ${-pad} ${128 + pad * 2} ${128 + pad * 2}">
-  <defs>
-    <linearGradient id="sw-bg" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#FF5470"/><stop offset=".52" stop-color="#9B4DFF"/><stop offset="1" stop-color="#2E6BFF"/>
-    </linearGradient>
-    <linearGradient id="sw-sheen" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#fff" stop-opacity=".2"/><stop offset=".55" stop-color="#fff" stop-opacity="0"/>
-    </linearGradient>
-    <filter id="sw-sh" x="-30%" y="-30%" width="160%" height="160%"><feDropShadow dx="0" dy="${small ? 1.5 : 2.5}" stdDeviation="${small ? 1.4 : 2.6}" flood-color="#1A0B3D" flood-opacity=".4"/></filter>
-  </defs>
-  <rect width="128" height="128" rx="30" fill="url(#sw-bg)"/>
-  <rect width="128" height="128" rx="30" fill="url(#sw-sheen)"/>
-  <rect x="1" y="1" width="126" height="126" rx="29" fill="none" stroke="#fff" stroke-opacity=".14" stroke-width="2"/>
-  <g filter="url(#sw-sh)">
-    <path d="${frame}" fill="none" stroke="#fff" stroke-width="${tiny ? 14 : small ? 10.5 : 8.5}" stroke-linecap="round" stroke-linejoin="round"/>
-    ${small ? "" : `<path d="M20 49 H86" stroke="#fff" stroke-opacity=".5" stroke-width="4.5"/>
-    <circle cx="31" cy="40.5" r="2.6" fill="#fff"/><circle cx="39" cy="40.5" r="2.6" fill="#fff" fill-opacity=".7"/><circle cx="47" cy="40.5" r="2.6" fill="#fff" fill-opacity=".45"/>
-    <path d="M33 65 H68" stroke="#fff" stroke-width="7.5" stroke-linecap="round"/>
-    <path d="M33 81 H51" stroke="#fff" stroke-opacity=".6" stroke-width="7.5" stroke-linecap="round"/>
-    <path d="M59 74 V88" stroke="#FFC94D" stroke-width="4" stroke-linecap="round"/>`}
-    ${small && !tiny ? `<path d="M35 62 H64" stroke="#fff" stroke-width="9" stroke-linecap="round"/>` : ""}
-    <g transform="translate(${pt.x} ${pt.y}) scale(${pt.s})">
-      <path d="${ptr}" fill="#fff" stroke="#24104F" stroke-width="${pt.w}" stroke-linejoin="round"/>
-    </g>
-  </g>
-</svg>`;
+const logoSource = `data:image/png;base64,${fs.readFileSync(path.join(root, "store", "logo-source.png")).toString("base64")}`;
+
+function iconSVG(size, { margin = 0 } = {}) {
+  const artwork = 128 - margin * 2;
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 128 128"><image href="${logoSource}" x="${margin}" y="${margin}" width="${artwork}" height="${artwork}"/></svg>`;
 }
 
 const browser = await puppeteer.launch({ executablePath: chromePath, headless: true, args: ["--hide-scrollbars", "--enable-unsafe-swiftshader"] });
@@ -71,7 +37,7 @@ try {
     await page.screenshot({ path: file, omitBackground: true, clip: { x: 0, y: 0, width: size, height: size } });
   };
   for (const n of [16, 32, 48, 128]) await shootSVG(iconSVG(n), n, path.join(root, "extension", "icons", `icon${n}.png`));
-  await shootSVG(iconSVG(128, { pad: 21.4 }), 128, path.join(root, "store", "store-icon-128.png"));
+  await shootSVG(iconSVG(128, { margin: 16 }), 128, path.join(root, "store", "store-icon-128.png"));
   fs.writeFileSync(path.join(root, "store", "icon.svg"), iconSVG(128));
   console.log("icons done");
 

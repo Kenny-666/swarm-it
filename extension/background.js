@@ -1,7 +1,7 @@
 // Swarmline: the toolbar button (or Alt+Shift+L) lets the swarm build the current tab.
 // Clicking again while it runs exits; swarmline.js handles that toggle itself.
 
-const TITLE = "Swarmline (Alt+Shift+L)";
+const TITLE = "Swarm It! (Alt+Shift+L)";
 
 async function build(tab) {
   if (!tab || tab.id == null) return;

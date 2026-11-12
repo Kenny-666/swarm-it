@@ -37,7 +37,7 @@ check(mf.name && mf.name.length <= 75, `name: "${mf.name}" (${mf.name.length}/75
 check(mf.description && mf.description.length <= 132, `summary: ${mf.description.length}/132 characters`);
 check(/^\d+(\.\d+){0,3}$/.test(mf.version), `version ${mf.version}`);
 const perms = mf.permissions || [];
-check(perms.every((p) => ["activeTab", "scripting"].includes(p)), `permissions: ${perms.join(", ")} (minimal)`, `unexpected permissions: ${perms.join(", ")}`);
+check(perms.every((p) => ["activeTab", "scripting", "storage"].includes(p)), `permissions: ${perms.join(", ")} (minimal)`, `unexpected permissions: ${perms.join(", ")}`);
 check(!mf.host_permissions && !mf.content_scripts, "no host permissions or always-on content scripts");
 check(!!mf.homepage_url, `homepage_url ${mf.homepage_url}`);
 for (const n of ["16", "32", "48", "128"]) {
